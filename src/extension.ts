@@ -718,15 +718,29 @@ function engineTag(): string {
   }
 }
 
-/** Release asset name for the host platform/arch, or undefined if unpublished. */
-function engineAsset(): string | undefined {
+interface EngineAsset {
+  name: string;
+  archive: "tar.gz" | "zip";
+  executable: string;
+}
+
+/** Release asset details for the host platform/arch, or undefined if unpublished. */
+function engineAsset(): EngineAsset | undefined {
   if (process.platform === "linux" && process.arch === "x64") {
-    return "kotonia-cli-linux-x64.tar.gz";
+    return { name: "kotonia-cli-linux-x64.tar.gz", archive: "tar.gz", executable: "kotonia-cli" };
   }
   if (process.platform === "linux" && process.arch === "arm64") {
-    return "kotonia-cli-linux-arm64.tar.gz";
+    return { name: "kotonia-cli-linux-arm64.tar.gz", archive: "tar.gz", executable: "kotonia-cli" };
   }
-  // macOS/Windows engine builds aren't published yet — fall back to PATH.
+  if (process.platform === "darwin" && process.arch === "x64") {
+    return { name: "kotonia-cli-darwin-x64.tar.gz", archive: "tar.gz", executable: "kotonia-cli" };
+  }
+  if (process.platform === "darwin" && process.arch === "arm64") {
+    return { name: "kotonia-cli-darwin-arm64.tar.gz", archive: "tar.gz", executable: "kotonia-cli" };
+  }
+  if (process.platform === "win32" && process.arch === "x64") {
+    return { name: "kotonia-cli-windows-x64.zip", archive: "zip", executable: "kotonia-cli.exe" };
+  }
   return undefined;
 }
 
@@ -742,7 +756,7 @@ function ensureManagedEngine(): Promise<string | undefined> {
     return Promise.resolve(undefined);
   }
   const destDir = vscode.Uri.joinPath(extContext.globalStorageUri, "engine", tag).fsPath;
-  const exe = path.join(destDir, "kotonia-cli");
+  const exe = path.join(destDir, asset.executable);
   if (fs.existsSync(exe)) {
     return Promise.resolve(exe);
   }
@@ -764,20 +778,29 @@ function ensureManagedEngine(): Promise<string | undefined> {
 
 async function downloadEngine(
   tag: string,
-  asset: string,
+  asset: EngineAsset,
   destDir: string,
   exe: string,
 ): Promise<string> {
-  const url = `https://github.com/${ENGINE_REPO}/releases/download/${tag}/${asset}`;
+  const url = `https://github.com/${ENGINE_REPO}/releases/download/${tag}/${asset.name}`;
   return vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Kotonia: エンジンを取得中 (${tag})…` },
     async () => {
       await fs.promises.mkdir(destDir, { recursive: true });
-      const tarball = path.join(destDir, asset);
+      const archive = path.join(destDir, asset.name);
       output.appendLine(`[engine] downloading ${url}`);
-      await httpDownload(url, tarball);
-      await execFileP("tar", ["-xzf", tarball, "-C", destDir]);
-      await fs.promises.unlink(tarball).catch(() => undefined);
+      await httpDownload(url, archive);
+      if (asset.archive === "tar.gz") {
+        await execFileP("tar", ["-xzf", archive, "-C", destDir]);
+      } else {
+        await execFileP("powershell.exe", [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          `Expand-Archive -LiteralPath '${archive.replace(/'/g, "''")}' -DestinationPath '${destDir.replace(/'/g, "''")}' -Force`,
+        ]);
+      }
+      await fs.promises.unlink(archive).catch(() => undefined);
       if (!fs.existsSync(exe)) {
         throw new Error(`engine binary missing after extract: ${exe}`);
       }
