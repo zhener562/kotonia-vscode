@@ -1,9 +1,11 @@
 .github/**
 .vscode/**
+.claude/**
 docs/**
 src/**
 node_modules/**
 dist/**
+bin/**
 tsconfig.json
 .gitignore
 *.vsix

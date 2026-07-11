@@ -3,10 +3,6 @@ name: Publish VS Code Extension
 on:
   workflow_dispatch:
     inputs:
-      cli_tag:
-        description: "kotonia-cli release tag to bundle. Empty = kotonia-cli.version"
-        required: false
-        type: string
       publish_marketplace:
         description: "Publish to Visual Studio Marketplace if VSCE_PAT is configured"
         required: false
@@ -21,14 +17,6 @@ permissions:
 jobs:
   package:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: linux-x64
-            cli_asset: kotonia-cli-linux-x64.tar.gz
-          - target: linux-arm64
-            cli_asset: kotonia-cli-linux-arm64.tar.gz
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,31 +30,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Resolve CLI release tag
-        id: cli
-        env:
-          CLI_TAG_INPUT: ${{ github.event.inputs.cli_tag }}
-        run: |
-          if [ -n "${CLI_TAG_INPUT:-}" ]; then
-            tag="$CLI_TAG_INPUT"
-          else
-            tag="$(tr -d '[:space:]' < kotonia-cli.version)"
-          fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "Using kotonia-cli $tag"
-
-      - name: Download CLI helper
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p dist/cli bin
-          gh release download "${{ steps.cli.outputs.tag }}" \
-            --repo zhener562/kotonia-cli \
-            --pattern "${{ matrix.cli_asset }}" \
-            --dir dist/cli
-          tar -xzf "dist/cli/${{ matrix.cli_asset }}" -C bin
-          chmod +x bin/kotonia-cli
-
       - name: Typecheck
         run: npm run typecheck
 
@@ -76,12 +39,12 @@ jobs:
       - name: Package VSIX
         run: |
           mkdir -p dist/vsix
-          npx vsce package --target ${{ matrix.target }} --out "dist/vsix/kotonia-agent-${{ matrix.target }}.vsix"
+          npx vsce package --out "dist/vsix/kotonia-agent.vsix"
 
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kotonia-agent-${{ matrix.target }}
+          name: kotonia-agent
           path: dist/vsix/*.vsix
           if-no-files-found: error
 
@@ -109,14 +72,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Download VSIX artifacts
+      - name: Download VSIX artifact
         uses: actions/download-artifact@v4
         with:
           path: dist/published-vsix
-          pattern: kotonia-agent-*
+          pattern: kotonia-agent
           merge-multiple: true
 
-      - name: Publish Marketplace packages
+      - name: Publish Marketplace package
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |

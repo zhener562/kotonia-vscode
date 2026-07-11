@@ -8,6 +8,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import * as os from "os";
 import * as fs from "fs";
+import * as https from "https";
 import { execFile, spawn } from "child_process";
 import { KotoniaEngine } from "./engine";
 import { ChatPanel } from "./panel";
@@ -144,10 +145,11 @@ function startEngine(resumeSessionId?: string): void {
     return;
   }
   const cfg = vscode.workspace.getConfiguration("kotonia");
-  const binary = resolveBinary(cfg.get<string>("enginePath", "kotonia-cli"), folder);
   const model = cfg.get<string>("model", "kotonia-gemma4-26b");
 
-  void gatherEnv().then((env) => {
+  void (async () => {
+    const binary = await ensureEngine(folder);
+    const env = await gatherEnv();
     if (model.startsWith("kotonia") && !env.KOTONIA_API_KEY && !process.env.KOTONIA_API_KEY) {
       const daemonJson = path.join(os.homedir(), ".kotonia", "daemon.json");
       if (!fs.existsSync(daemonJson)) {
@@ -172,7 +174,7 @@ function startEngine(resumeSessionId?: string): void {
     engineState = { engine, remembered: new Set(), lastTurnId: 0, greeted: false, firstTurn: true };
     engine.start();
     setTimeout(() => sessionTree.refresh(), 800);
-  });
+  })();
 }
 
 function handlePanelAction(a: PanelAction): void {
@@ -527,10 +529,10 @@ function runLogin(): void {
     vscode.window.showErrorMessage("Kotonia: open a folder first.");
     return;
   }
-  const cfg = vscode.workspace.getConfiguration("kotonia");
-  const binary = resolveBinary(cfg.get<string>("enginePath", "kotonia-cli"), folder);
   output.appendLine("[login] starting device-code flow");
 
+  void (async () => {
+  const binary = await ensureEngine(folder);
   const child = spawn(binary, ["login"], { cwd: folder.uri.fsPath, env: process.env });
   let verifyUri: string | undefined;
   let sawCodeLabel = false;
@@ -586,6 +588,7 @@ function runLogin(): void {
       );
     }
   });
+  })();
 }
 
 /** A sticky (button-bearing) notification showing the login code, so it stays
@@ -681,18 +684,145 @@ function pickWorkspaceFolder(): vscode.WorkspaceFolder | undefined {
   return vscode.workspace.workspaceFolders?.[0];
 }
 
-function resolveBinary(raw: string, folder: vscode.WorkspaceFolder): string {
+// ---- engine resolution / download -----------------------------------------
+//
+// The engine binary is NOT bundled in the VSIX (a bundled unsigned native
+// binary trips the Marketplace "suspicious content" scanner). Instead the
+// pinned `kotonia-cli` release is downloaded on demand to globalStorage and
+// cached per version — so after a one-time first-run fetch the UX is identical
+// to a bundled binary. A user-set `kotonia.enginePath` (custom path or a plain
+// `kotonia-cli` resolved via PATH on the remote) always wins.
+
+const ENGINE_REPO = "zhener562/kotonia-cli";
+
+/** Resolve the engine binary, downloading the pinned release on first use. */
+async function ensureEngine(folder: vscode.WorkspaceFolder): Promise<string> {
+  const raw = vscode.workspace.getConfiguration("kotonia").get<string>("enginePath", "kotonia-cli");
   const expanded = raw.replace(/\$\{workspaceFolder\}/g, folder.uri.fsPath).trim();
-  if (!expanded || expanded === "kotonia-cli") {
-    return bundledEnginePath() ?? (expanded || "kotonia-cli");
+  // Explicit override (any custom path) → use as-is, no download.
+  if (expanded && expanded !== "kotonia-cli") {
+    return expanded;
   }
-  return expanded;
+  // Managed engine: download-on-demand, cached in globalStorage.
+  const managed = await ensureManagedEngine();
+  return managed ?? "kotonia-cli"; // fall back to a PATH lookup on the host.
 }
 
-function bundledEnginePath(): string | undefined {
-  const exe = process.platform === "win32" ? "kotonia-cli.exe" : "kotonia-cli";
-  const candidate = path.join(extContext.extensionPath, "bin", exe);
-  return fs.existsSync(candidate) ? candidate : undefined;
+/** The pinned engine release tag, read from the bundled `kotonia-cli.version`. */
+function engineTag(): string {
+  try {
+    const p = path.join(extContext.extensionPath, "kotonia-cli.version");
+    return fs.readFileSync(p, "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
+/** Release asset name for the host platform/arch, or undefined if unpublished. */
+function engineAsset(): string | undefined {
+  if (process.platform === "linux" && process.arch === "x64") {
+    return "kotonia-cli-linux-x64.tar.gz";
+  }
+  if (process.platform === "linux" && process.arch === "arm64") {
+    return "kotonia-cli-linux-arm64.tar.gz";
+  }
+  // macOS/Windows engine builds aren't published yet — fall back to PATH.
+  return undefined;
+}
+
+let engineDownload: Promise<string | undefined> | undefined;
+
+/** Return the cached managed engine path, downloading it once if missing.
+ * Returns undefined (→ PATH fallback) when the platform is unsupported or the
+ * download fails. */
+function ensureManagedEngine(): Promise<string | undefined> {
+  const tag = engineTag();
+  const asset = engineAsset();
+  if (!tag || !asset) {
+    return Promise.resolve(undefined);
+  }
+  const destDir = vscode.Uri.joinPath(extContext.globalStorageUri, "engine", tag).fsPath;
+  const exe = path.join(destDir, "kotonia-cli");
+  if (fs.existsSync(exe)) {
+    return Promise.resolve(exe);
+  }
+  if (!engineDownload) {
+    engineDownload = downloadEngine(tag, asset, destDir, exe)
+      .catch((e) => {
+        output.appendLine(`[engine] download failed: ${e}`);
+        vscode.window.showErrorMessage(
+          `Kotonia: could not download the engine (${tag}). Falling back to \`kotonia-cli\` on PATH. ${e}`,
+        );
+        return undefined;
+      })
+      .finally(() => {
+        engineDownload = undefined;
+      });
+  }
+  return engineDownload;
+}
+
+async function downloadEngine(
+  tag: string,
+  asset: string,
+  destDir: string,
+  exe: string,
+): Promise<string> {
+  const url = `https://github.com/${ENGINE_REPO}/releases/download/${tag}/${asset}`;
+  return vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Kotonia: エンジンを取得中 (${tag})…` },
+    async () => {
+      await fs.promises.mkdir(destDir, { recursive: true });
+      const tarball = path.join(destDir, asset);
+      output.appendLine(`[engine] downloading ${url}`);
+      await httpDownload(url, tarball);
+      await execFileP("tar", ["-xzf", tarball, "-C", destDir]);
+      await fs.promises.unlink(tarball).catch(() => undefined);
+      if (!fs.existsSync(exe)) {
+        throw new Error(`engine binary missing after extract: ${exe}`);
+      }
+      await fs.promises.chmod(exe, 0o755);
+      output.appendLine(`[engine] ready: ${exe}`);
+      return exe;
+    },
+  );
+}
+
+/** Download a URL to a file, following redirects (GitHub → codeload/S3). */
+function httpDownload(url: string, dest: string, redirects = 5): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { headers: { "User-Agent": "kotonia-vscode" } }, (res) => {
+      const status = res.statusCode ?? 0;
+      if (status >= 300 && status < 400 && res.headers.location) {
+        res.resume();
+        if (redirects <= 0) {
+          reject(new Error("too many redirects"));
+          return;
+        }
+        httpDownload(res.headers.location, dest, redirects - 1).then(resolve, reject);
+        return;
+      }
+      if (status !== 200) {
+        res.resume();
+        reject(new Error(`HTTP ${status} for ${url}`));
+        return;
+      }
+      const file = fs.createWriteStream(dest);
+      res.pipe(file);
+      file.on("finish", () => file.close((err) => (err ? reject(err) : resolve())));
+      file.on("error", (err) => {
+        fs.promises.unlink(dest).catch(() => undefined);
+        reject(err);
+      });
+    });
+    req.on("error", reject);
+  });
+}
+
+function execFileP(cmd: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, (err) => (err ? reject(err) : resolve()));
+  });
 }
 
 async function gatherEnv(): Promise<Record<string, string>> {

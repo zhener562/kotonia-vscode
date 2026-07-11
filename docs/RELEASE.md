@@ -1,8 +1,12 @@
 # Release and Sync
 
 `kotonia-vscode` is published from the `vscode-extension/` subtree. The
-extension bundles a released `kotonia-cli` helper binary and falls back to
-`kotonia.enginePath`/PATH when no bundled helper is present.
+extension does **not** bundle the `kotonia-cli` helper binary — a bundled
+unsigned native binary trips the Marketplace "suspicious content" scanner.
+Instead it downloads the pinned `kotonia-cli` release (see
+`kotonia-cli.version`) on first use, caching it per version under the
+extension's global storage. A user-set `kotonia.enginePath` (custom path, or
+`kotonia-cli` resolved via PATH on the remote) always wins.
 
 ## One-time setup
 
@@ -44,7 +48,17 @@ git tag <EXT_VERSION>
 git push origin <EXT_VERSION>
 ```
 
-The extension workflow downloads the pinned CLI release, places it at
-`bin/kotonia-cli`, builds platform-specific VSIX packages for `linux-x64` and
-`linux-arm64`, attaches them to the GitHub release, and publishes them to the
-Marketplace when `VSCE_PAT` is configured.
+The extension workflow builds a single, platform-agnostic VSIX (no bundled
+binary), attaches it to the GitHub release, and publishes it to the Marketplace
+when `VSCE_PAT` is configured. The engine is fetched at runtime from the CLI
+release pinned in `kotonia-cli.version`.
+
+To publish manually without a tag:
+
+```bash
+gh workflow run publish.yml --repo zhener562/kotonia-vscode --ref main \
+  -f publish_marketplace=true
+```
+
+(The old `-f cli_tag=…` input is gone — the engine version is pinned in
+`kotonia-cli.version`, so bump that file instead.)
