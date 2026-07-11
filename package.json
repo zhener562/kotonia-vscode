@@ -8,8 +8,19 @@
   "icon": "media/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/zhener562/kotonia-vscode"
+    "url": "https://github.com/zhener562/kotonia-vscode.git"
   },
+  "homepage": "https://github.com/zhener562/kotonia-vscode#readme",
+  "bugs": {
+    "url": "https://github.com/zhener562/kotonia-vscode/issues"
+  },
+  "keywords": [
+    "agent",
+    "ai",
+    "assistant",
+    "rust",
+    "cli"
+  ],
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -21,7 +32,9 @@
   "extensionKind": [
     "workspace"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onView:kotonia.sessions"
+  ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
