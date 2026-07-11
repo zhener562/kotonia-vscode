@@ -1,6 +1,21 @@
 # Kotonia Agent — VS Code extension
 
-A thin VS Code client over the [`kotonia-cli`](../) Rust engine. The engine
+## Install (direct download)
+
+Until the Marketplace listing is live, install the VSIX directly:
+
+1. Download `kotonia-agent.vsix` from the
+   [latest release](https://github.com/zhener562/kotonia-vscode/releases/latest).
+2. Install it, either from the command line:
+   ```bash
+   code --install-extension kotonia-agent.vsix
+   ```
+   or in VS Code: **Extensions** view → `⋯` menu → **Install from VSIX…**.
+
+The engine (`kotonia-cli`) is downloaded automatically on first use; no manual
+binary setup is needed for the default (hosted) configuration.
+
+A thin VS Code client over the [`kotonia-cli`](https://github.com/zhener562/kotonia-cli) Rust engine. The engine
 does all the work (ReAct loop, tool execution, git-worktree isolation,
 approval policy, history); this extension is just a UI that speaks the engine's
 JSON stdio protocol (`kotonia-cli --serve`).
@@ -17,9 +32,10 @@ VS Code (extension host)                     kotonia-cli --serve (child)
 └───────────────────────────┘                └──────────────────────────┘
 ```
 
-Protocol wire types live in [`src/protocol.ts`](src/protocol.ts), mirroring the
-Rust side (`../src/serve.rs` + the `Event` enum). Monorepo layout keeps both in
-lockstep — see [`../docs/VSCODE_EXTENSION_DESIGN_QUESTIONS.md`](../docs/VSCODE_EXTENSION_DESIGN_QUESTIONS.md).
+Protocol wire types live in [`src/protocol.ts`](https://github.com/zhener562/kotonia-vscode/blob/main/src/protocol.ts),
+mirroring the Rust side (`serve.rs` + the `Event` enum) in the
+[`kotonia-cli`](https://github.com/zhener562/kotonia-cli) monorepo, which keeps
+both in lockstep.
 
 ### Relationship to kotonia-desktop
 
