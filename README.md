@@ -2,17 +2,20 @@
 
 ## Install (direct download)
 
-Until the Marketplace listing is live, install the VSIX directly. One-liner:
+Until the Marketplace listing is live, install the VSIX directly.
+
+1. Download `kotonia-agent.vsix` from the
+   [latest build release](https://github.com/zhener562/kotonia-vscode/releases/download/latest/kotonia-agent.vsix).
+2. In VS Code, open the **Extensions** view (`Cmd`/`Ctrl`+`Shift`+`X`) →
+   `⋯` (More Actions) menu → **Install from VSIX…** → pick the file.
+   No terminal needed — this works on macOS, Windows, and Linux.
+
+If you have the `code` CLI on PATH (on macOS, enable it via Command Palette →
+`Shell Command: Install 'code' command in PATH`), you can instead run:
 
 ```bash
-curl -L -o kotonia-agent.vsix \
-  https://github.com/zhener562/kotonia-vscode/releases/download/latest/kotonia-agent.vsix
 code --install-extension kotonia-agent.vsix
 ```
-
-Or manually: download `kotonia-agent.vsix` from the
-[latest build release](https://github.com/zhener562/kotonia-vscode/releases/tag/latest),
-then in VS Code use **Extensions** view → `⋯` menu → **Install from VSIX…**.
 
 The engine (`kotonia-cli`) is downloaded automatically on first use; no manual
 binary setup is needed for the default (hosted) configuration.
