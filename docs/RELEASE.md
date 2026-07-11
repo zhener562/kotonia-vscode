@@ -14,7 +14,7 @@ gh repo create zhener562/kotonia-vscode --public \
 git remote add kotonia-vscode git@github.com:zhener562/kotonia-vscode.git
 ```
 
-Create or verify the Visual Studio Marketplace publisher id `kotonia`, then add
+Create or verify the Visual Studio Marketplace publisher id `shinjishimizu`, then add
 `VSCE_PAT` as a GitHub Actions secret in `zhener562/kotonia-vscode`.
 
 ## Sync from the monorepo
@@ -40,8 +40,8 @@ Update that file intentionally when taking a new engine into the extension.
 In `kotonia-vscode`, tag the synced commit:
 
 ```bash
-git tag v0.0.16
-git push origin v0.0.16
+git tag <EXT_VERSION>
+git push origin <EXT_VERSION>
 ```
 
 The extension workflow downloads the pinned CLI release, places it at

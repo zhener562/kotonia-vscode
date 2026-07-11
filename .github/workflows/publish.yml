@@ -92,8 +92,31 @@ jobs:
           files: dist/vsix/*.vsix
           fail_on_unmatched_files: true
 
-      - name: Publish Marketplace package
-        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.publish_marketplace == 'true'
+  publish-marketplace:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.publish_marketplace == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download VSIX artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/published-vsix
+          pattern: kotonia-agent-*
+          merge-multiple: true
+
+      - name: Publish Marketplace packages
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
@@ -101,4 +124,4 @@ jobs:
             echo "VSCE_PAT is not configured; skipping Marketplace publish."
             exit 0
           fi
-          npx vsce publish --packagePath "dist/vsix/kotonia-agent-${{ matrix.target }}.vsix"
+          npx vsce publish --packagePath dist/published-vsix/*.vsix

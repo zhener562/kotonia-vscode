@@ -2,8 +2,8 @@
   "name": "kotonia-agent",
   "displayName": "Kotonia Agent",
   "description": "%extension.description%",
-  "version": "0.0.15",
-  "publisher": "kotonia",
+  "version": "0.0.16",
+  "publisher": "shinjishimizu",
   "license": "MIT",
   "icon": "media/icon.png",
   "repository": {
