@@ -12,6 +12,7 @@ import * as https from "https";
 import { execFile, spawn } from "child_process";
 import { KotoniaEngine } from "./engine";
 import { ChatPanel } from "./panel";
+import { AvatarPanel } from "./avatarPanel";
 import { SessionTreeProvider } from "./sessionTree";
 import { PanelAction } from "./webview";
 import { EditorContext, Hello, Outbound } from "./protocol";
@@ -30,6 +31,7 @@ interface EngineState {
 }
 
 let chatPanel: ChatPanel | undefined;
+let avatarPanel: AvatarPanel | undefined;
 let engineState: EngineState | undefined;
 let sessionTree: SessionTreeProvider;
 let output: vscode.OutputChannel;
@@ -51,18 +53,31 @@ const ui = {
     chatPanel?.reset();
   },
   avatarBegin(): void {
-    chatPanel?.avatarBegin();
+    ensureAvatarPanel();
+    avatarPanel?.begin();
   },
   avatarChunk(chunkType: number, data: string): void {
-    chatPanel?.avatarChunk(chunkType, data);
+    avatarPanel?.chunk(chunkType, data);
   },
   avatarEnd(): void {
-    chatPanel?.avatarEnd();
+    avatarPanel?.end();
   },
   avatarStop(): void {
-    chatPanel?.avatarStop();
+    avatarPanel?.stop();
   },
 };
+
+/** Open the dedicated avatar panel if it isn't already up. It lives in the
+ * editor area so the user can move / resize / float it (Move Editor into New
+ * Window) independently of the chat. */
+function ensureAvatarPanel(): void {
+  if (avatarPanel) {
+    return;
+  }
+  avatarPanel = new AvatarPanel(extContext.extensionUri, () => {
+    avatarPanel = undefined;
+  });
+}
 
 export function activate(context: vscode.ExtensionContext): void {
   extContext = context;
@@ -79,6 +94,10 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("kotonia.login", () => runLogin()),
     vscode.commands.registerCommand("kotonia.toggleAvatar", () => toggleAvatar()),
     vscode.commands.registerCommand("kotonia.selectAvatar", () => selectAvatar()),
+    vscode.commands.registerCommand("kotonia.showAvatar", () => {
+      ensureAvatarPanel();
+      avatarPanel?.reveal();
+    }),
     vscode.commands.registerCommand("kotonia.cancel", () => engineState?.engine.cancel()),
     vscode.commands.registerCommand("kotonia.reviewChanges", () => reviewChanges()),
     vscode.commands.registerCommand("kotonia.applyChanges", () => applyChanges()),
@@ -94,6 +113,8 @@ export function activate(context: vscode.ExtensionContext): void {
 export function deactivate(): void {
   engineState?.engine.dispose();
   engineState = undefined;
+  avatarPanel?.dispose();
+  avatarPanel = undefined;
 }
 
 // ---- chat panel + engine lifecycle -----------------------------------------
@@ -275,49 +296,78 @@ function toggleAvatar(): void {
   const cfg = vscode.workspace.getConfiguration("kotonia");
   const next = !cfg.get<boolean>("avatar.enabled", false);
   void cfg.update("avatar.enabled", next, vscode.ConfigurationTarget.Workspace);
-  if (next && !cfg.get<string>("avatar.id", "").trim()) {
-    vscode.window.showInformationMessage(
-      "Kotonia: avatar on — set a registered avatar id in kotonia.avatar.id to see it speak.",
-    );
+  if (next) {
+    const name = cfg.get<string>("avatar.character", "ことな").trim();
+    ensureAvatarPanel();
+    ui.note(`talking avatar ON（${name}）.`);
+  } else {
+    ui.note("talking avatar OFF.");
   }
-  ui.note(`talking avatar ${next ? "ON" : "OFF"}.`);
   if (!next) {
     speakAbort?.abort();
     ui.avatarStop();
   }
 }
 
-/** Curated avatar presets — each carries its canonical voice so picking a
- * character sets the right avatar_id AND TTS backend/speaker. Add entries as
- * kotonia registers more mascots. */
-interface AvatarPreset {
+/** Named avatar characters. The user picks one by NAME
+ * (`kotonia.avatar.character` = "ことな" / "ひなた"); each carries its
+ * canonical avatar_id AND voice so the character sounds right. */
+interface AvatarCharacter {
   label: string;
+  /** Names/aliases that select this character. First entry is canonical. */
+  keys: string[];
   id: string;
   ttsBackend: string;
   speaker: string;
 }
-const AVATAR_PRESETS: AvatarPreset[] = [
-  { label: "ことな (Kotona)", id: "kotona_v4", ttsBackend: "aivis", speaker: "888753762" },
-  { label: "ひなた (Hinata)", id: "persona_media_45_ditto", ttsBackend: "irodori", speaker: "" },
+const AVATAR_CHARACTERS: AvatarCharacter[] = [
+  { label: "ことな (Kotona)", keys: ["ことな", "kotona"], id: "kotona_v4", ttsBackend: "aivis", speaker: "888753762" },
+  { label: "ひなた (Hinata)", keys: ["ひなた", "hinata"], id: "persona_media_45_ditto", ttsBackend: "irodori", speaker: "" },
 ];
 
-/** Pick the talking avatar from the curated presets (ことな / ひなた) — which
- * also switch the voice — or enter any registered avatar id directly. */
+function findCharacter(name: string): AvatarCharacter | undefined {
+  const n = name.trim().toLowerCase();
+  return AVATAR_CHARACTERS.find((c) => c.keys.some((k) => k.toLowerCase() === n));
+}
+
+/** Resolve the configured avatar to a concrete {id, ttsBackend, speaker}.
+ * `kotonia.avatar.character` holds either a known name (ことな / ひなた →
+ * preset voice) or a raw avatar_id (custom → voice from avatar.ttsBackend /
+ * avatar.speaker). */
+function resolveAvatar(cfg: vscode.WorkspaceConfiguration): {
+  id: string;
+  ttsBackend: string;
+  speaker: string;
+} {
+  const character = cfg.get<string>("avatar.character", "ことな").trim();
+  const c = findCharacter(character);
+  if (c) {
+    return { id: c.id, ttsBackend: c.ttsBackend, speaker: c.speaker };
+  }
+  return {
+    id: character || cfg.get<string>("avatar.id", "").trim(),
+    ttsBackend: cfg.get<string>("avatar.ttsBackend", "aivis"),
+    speaker: cfg.get<string>("avatar.speaker", ""),
+  };
+}
+
+/** Pick the talking avatar by name (ことな / ひなた) or a custom name/avatar_id. */
 async function selectAvatar(): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("kotonia");
-  const current = cfg.get<string>("avatar.id", "").trim();
+  const current = cfg.get<string>("avatar.character", "ことな").trim();
+  const currentChar = findCharacter(current);
 
-  type Item = vscode.QuickPickItem & { preset?: AvatarPreset; custom?: boolean };
-  const items: Item[] = AVATAR_PRESETS.map((p) => ({
-    label: p.label,
-    description: p.id,
-    detail: p.id === current ? "現在選択中" : undefined,
-    preset: p,
+  type Item = vscode.QuickPickItem & { character?: AvatarCharacter; custom?: boolean };
+  const items: Item[] = AVATAR_CHARACTERS.map((c) => ({
+    label: c.label,
+    description: c.id,
+    detail: currentChar?.label === c.label ? "現在選択中" : undefined,
+    character: c,
   }));
-  items.push({ label: "$(edit) カスタムIDを入力…", description: "任意の avatar_id を直接指定", custom: true });
+  items.push({ label: "$(edit) カスタム（名前 / avatar_id を入力）…", custom: true });
 
   const picked = await vscode.window.showQuickPick(items, {
-    placeHolder: "アバターを選択（ことな / ひなた / カスタムID）",
+    placeHolder: "アバターを選択（ことな / ひなた / カスタム）",
   });
   if (!picked) {
     return;
@@ -325,23 +375,20 @@ async function selectAvatar(): Promise<void> {
 
   const target = vscode.ConfigurationTarget.Workspace;
   if (picked.custom) {
-    const id = await vscode.window.showInputBox({
-      prompt: "avatar_id を入力（例: kotona_v4 / persona_media_45_ditto）",
+    const value = await vscode.window.showInputBox({
+      prompt: "キャラ名（ことな / ひなた）または avatar_id を入力",
       value: current,
       ignoreFocusOut: true,
     });
-    if (!id || !id.trim()) {
+    if (!value || !value.trim()) {
       return;
     }
-    await cfg.update("avatar.id", id.trim(), target);
-    vscode.window.showInformationMessage(`Kotonia: アバターを ${id.trim()} に設定しました。`);
-  } else if (picked.preset) {
-    const p = picked.preset;
-    await cfg.update("avatar.id", p.id, target);
-    await cfg.update("avatar.ttsBackend", p.ttsBackend, target);
-    await cfg.update("avatar.speaker", p.speaker, target);
+    await cfg.update("avatar.character", value.trim(), target);
+    vscode.window.showInformationMessage(`Kotonia: アバターを「${value.trim()}」に設定しました。`);
+  } else if (picked.character) {
+    await cfg.update("avatar.character", picked.character.keys[0], target);
     vscode.window.showInformationMessage(
-      `Kotonia: アバターを「${p.label}」に設定しました（声も切替。次の発話から反映）。`,
+      `Kotonia: アバターを「${picked.character.label}」に設定しました（声も切替。次の発話から反映）。`,
     );
   }
 }
@@ -370,8 +417,8 @@ async function speak(text: string): Promise<void> {
   if (!cfg.get<boolean>("avatar.enabled", false)) {
     return;
   }
-  const avatarId = cfg.get<string>("avatar.id", "").trim();
-  if (!avatarId || !text.trim()) {
+  const resolved = resolveAvatar(cfg);
+  if (!resolved.id || !text.trim()) {
     return;
   }
   const auth = readAvatarAuth(cfg);
@@ -387,7 +434,7 @@ async function speak(text: string): Promise<void> {
   // Numeric speaker ids (AivisSpeech / VoiceVox style) must go over the wire
   // as numbers — the ditto→TTS proxy forwards `speaker` verbatim and the
   // engine expects an int for those backends.
-  const speakerStr = cfg.get<string>("avatar.speaker", "").trim();
+  const speakerStr = String(resolved.speaker ?? "").trim();
   const speaker: string | number | undefined = speakerStr
     ? /^\d+$/.test(speakerStr)
       ? Number(speakerStr)
@@ -395,8 +442,8 @@ async function speak(text: string): Promise<void> {
     : undefined;
   const body = {
     text,
-    avatar_id: avatarId,
-    tts_backend: cfg.get<string>("avatar.ttsBackend", "aivis"),
+    avatar_id: resolved.id,
+    tts_backend: resolved.ttsBackend,
     language: cfg.get<string>("avatar.language", "ja"),
     speaker,
     speed: cfg.get<number>("avatar.speed", 1.2),
