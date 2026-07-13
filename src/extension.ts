@@ -602,12 +602,12 @@ async function selectAvatar(): Promise<void> {
  * kotonia-desktop) resolves. Custom entry covers ~/.kotonia/providers.json. */
 const MODELS: { label: string; id: string; detail: string }[] = [
   { label: "Kotonia Gemma4 26B（hosted・既定）", id: "kotonia-gemma4-26b", detail: "kotonia.ai /api/v1・device_token" },
-  { label: "DeepSeek Chat（API）", id: "deepseek-chat", detail: "V4-Flash class・要 DEEPSEEK_API_KEY" },
+  { label: "Kotonia ThinkCap 27B（hosted・reasoning）", id: "kotonia-thinkcap-27b", detail: "kotonia.ai /api/v1・device_token" },
+  { label: "Kotonia ThinkCap 27B :nothink", id: "kotonia-thinkcap-27b:nothink", detail: "reasoning無効・低遅延" },
+  { label: "DeepSeek Chat（API）", id: "deepseek-chat", detail: "要 DEEPSEEK_API_KEY" },
   { label: "DeepSeek Reasoner（API）", id: "deepseek-reasoner", detail: "推論・要 DEEPSEEK_API_KEY" },
   { label: "DeepSeek Reasoner :thinking", id: "deepseek-reasoner:thinking", detail: "推論モード" },
   { label: "Claude Code（ローカル claude バイナリ）", id: "claude-code", detail: "claude をサブプロセス駆動" },
-  { label: "Gemma4 26B Uncensored（ローカル vLLM）", id: "gemma4-26b-uncensored", detail: ":8899" },
-  { label: "DeepSeek V4-Flash（ローカル llama.cpp）", id: "deepseek-v4-flash", detail: ":8898" },
 ];
 
 /** Pick the agent model. The model is fixed at engine start, so a running
