@@ -1058,9 +1058,9 @@ function engineAsset(): EngineAsset | undefined {
   if (process.platform === "linux" && process.arch === "arm64") {
     return { name: "kotonia-cli-linux-arm64.tar.gz", archive: "tar.gz", executable: "kotonia-cli" };
   }
-  if (process.platform === "darwin" && process.arch === "x64") {
-    return { name: "kotonia-cli-darwin-x64.tar.gz", archive: "tar.gz", executable: "kotonia-cli" };
-  }
+  // Intel macOS is intentionally unsupported for the managed engine (no
+  // x86_64-apple-darwin release asset): Apple Silicon uses the arm64 asset.
+  // A genuine Intel Mac falls back to a `kotonia-cli` on PATH.
   if (process.platform === "darwin" && process.arch === "arm64") {
     return { name: "kotonia-cli-darwin-arm64.tar.gz", archive: "tar.gz", executable: "kotonia-cli" };
   }
