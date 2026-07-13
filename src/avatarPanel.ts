@@ -67,11 +67,20 @@ export class AvatarPanel {
       font-size: 0.85em; line-height: 1.6; text-align: center; padding: 2em 1.5em;
     }
     #avatar { display: none; width: 100%; height: 100vh; object-fit: contain; }
+    #unmute {
+      display: none; position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+      z-index: 10; cursor: pointer; user-select: none;
+      background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+      font-family: var(--vscode-font-family); font-size: 0.85em;
+      padding: 7px 14px; border-radius: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+    }
+    #unmute:hover { background: var(--vscode-button-hoverBackground); }
   </style>
 </head>
 <body>
   <div id="placeholder">アバター待機中… 発話すると表示されます。<br />このパネルはドラッグで移動・リサイズでき、タブ右クリック →「エディターを新しいウィンドウに移動」で VS Code の外に浮かせられます。</div>
   <canvas id="avatar"></canvas>
+  <div id="unmute">🔊 クリックで音声を有効化</div>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

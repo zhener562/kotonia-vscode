@@ -16,6 +16,26 @@
   let nextStartTime = 0;
   let pendingAudio = [];
   let waitingFirstFrame = false;
+  const unmute = document.getElementById("unmute");
+
+  // The panel opens without focus (preserveFocus), so its document has no user
+  // activation and Chromium's autoplay policy keeps the AudioContext suspended
+  // — frames render but audio is silent. Show a one-click "enable sound" prompt;
+  // the click provides the gesture that lets resume() take effect. After the
+  // first successful resume the context stays unlocked for the session.
+  function updateUnmute() {
+    if (!unmute) return;
+    unmute.style.display =
+      audioCtx && audioCtx.state === "suspended" ? "block" : "none";
+  }
+  function unlockAudio() {
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx.resume().then(updateUnmute, updateUnmute);
+    }
+  }
+  if (unmute) unmute.addEventListener("click", unlockAudio);
+  window.addEventListener("pointerdown", unlockAudio);
+  window.addEventListener("keydown", unlockAudio);
 
   function b64ToBytes(b64) {
     const bin = atob(b64);
@@ -29,7 +49,8 @@
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       nextStartTime = audioCtx.currentTime;
     }
-    if (audioCtx.state === "suspended") audioCtx.resume();
+    if (audioCtx.state === "suspended") audioCtx.resume().then(updateUnmute, updateUnmute);
+    updateUnmute();
     return audioCtx;
   }
 
