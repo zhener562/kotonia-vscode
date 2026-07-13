@@ -66,49 +66,54 @@
           "group": "navigation@2"
         },
         {
-          "command": "kotonia.newChat",
-          "when": "view == kotonia.sessions",
-          "group": "0_session@1"
-        },
-        {
-          "command": "kotonia.refreshSessions",
-          "when": "view == kotonia.sessions",
-          "group": "0_session@2"
-        },
-        {
-          "command": "kotonia.login",
-          "when": "view == kotonia.sessions",
-          "group": "1_auth"
-        },
-        {
           "command": "kotonia.selectModel",
           "when": "view == kotonia.sessions",
-          "group": "1_auth"
-        },
-        {
-          "command": "kotonia.toggleAvatar",
-          "when": "view == kotonia.sessions",
-          "group": "1_auth"
+          "group": "navigation@3"
         },
         {
           "command": "kotonia.selectAvatar",
           "when": "view == kotonia.sessions",
-          "group": "1_auth"
+          "group": "navigation@4"
+        },
+        {
+          "command": "kotonia.login",
+          "when": "view == kotonia.sessions && !kotonia.loggedIn",
+          "group": "navigation@9"
+        },
+        {
+          "command": "kotonia.logout",
+          "when": "view == kotonia.sessions && kotonia.loggedIn",
+          "group": "navigation@9"
         },
         {
           "command": "kotonia.showAvatar",
           "when": "view == kotonia.sessions",
-          "group": "1_auth"
+          "group": "9_more@1"
+        },
+        {
+          "command": "kotonia.toggleAvatar",
+          "when": "view == kotonia.sessions",
+          "group": "9_more@2"
         },
         {
           "command": "kotonia.reviewChanges",
           "when": "view == kotonia.sessions",
-          "group": "2_worktree"
+          "group": "9_more@3"
         },
         {
           "command": "kotonia.applyChanges",
           "when": "view == kotonia.sessions",
-          "group": "2_worktree"
+          "group": "9_more@4"
+        },
+        {
+          "command": "kotonia.setKotoniaApiKey",
+          "when": "view == kotonia.sessions",
+          "group": "9_more@5"
+        },
+        {
+          "command": "kotonia.setDeepSeekApiKey",
+          "when": "view == kotonia.sessions",
+          "group": "9_more@6"
         }
       ]
     },
@@ -138,12 +143,20 @@
       {
         "command": "kotonia.login",
         "title": "%cmd.login.title%",
-        "category": "Kotonia"
+        "category": "Kotonia",
+        "icon": "$(sign-in)"
+      },
+      {
+        "command": "kotonia.logout",
+        "title": "%cmd.logout.title%",
+        "category": "Kotonia",
+        "icon": "$(sign-out)"
       },
       {
         "command": "kotonia.selectModel",
         "title": "%cmd.selectModel.title%",
-        "category": "Kotonia"
+        "category": "Kotonia",
+        "icon": "$(chip)"
       },
       {
         "command": "kotonia.toggleAvatar",
@@ -153,7 +166,8 @@
       {
         "command": "kotonia.selectAvatar",
         "title": "%cmd.selectAvatar.title%",
-        "category": "Kotonia"
+        "category": "Kotonia",
+        "icon": "$(account)"
       },
       {
         "command": "kotonia.showAvatar",

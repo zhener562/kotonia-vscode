@@ -92,6 +92,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("kotonia.openSession", (id: string) => openSession(id)),
     vscode.commands.registerCommand("kotonia.refreshSessions", () => sessionTree.refresh()),
     vscode.commands.registerCommand("kotonia.login", () => runLogin()),
+    vscode.commands.registerCommand("kotonia.logout", () => logout()),
     vscode.commands.registerCommand("kotonia.selectModel", () => selectModel()),
     vscode.commands.registerCommand("kotonia.toggleAvatar", () => toggleAvatar()),
     vscode.commands.registerCommand("kotonia.selectAvatar", () => selectAvatar()),
@@ -109,6 +110,43 @@ export function activate(context: vscode.ExtensionContext): void {
       promptSecret(SECRET_DEEPSEEK, "DeepSeek API key (DEEPSEEK_API_KEY)"),
     ),
   );
+
+  refreshLoginContext();
+}
+
+/** True when a device login (~/.kotonia/daemon.json) or KOTONIA_API_KEY is
+ * present. Drives the login/logout toggle in the view toolbar. */
+function isLoggedIn(): boolean {
+  if (process.env.KOTONIA_API_KEY) {
+    return true;
+  }
+  try {
+    return fs.existsSync(path.join(os.homedir(), ".kotonia", "daemon.json"));
+  } catch {
+    return false;
+  }
+}
+
+function refreshLoginContext(): void {
+  void vscode.commands.executeCommand("setContext", "kotonia.loggedIn", isLoggedIn());
+}
+
+async function logout(): Promise<void> {
+  const ok = await vscode.window.showWarningMessage(
+    "Kotonia: ログアウトしますか？ デバイスの認証情報（~/.kotonia/daemon.json）を削除します。",
+    { modal: true },
+    "ログアウト",
+  );
+  if (ok !== "ログアウト") {
+    return;
+  }
+  try {
+    fs.unlinkSync(path.join(os.homedir(), ".kotonia", "daemon.json"));
+  } catch {
+    /* already gone */
+  }
+  refreshLoginContext();
+  vscode.window.showInformationMessage("Kotonia: ログアウトしました。");
 }
 
 export function deactivate(): void {
@@ -746,7 +784,8 @@ function runLogin(): void {
   );
   child.on("exit", (code) => {
     if (code === 0) {
-      vscode.window.showInformationMessage("Kotonia: signed in. Press New Chat (＋) to start.");
+      refreshLoginContext();
+      vscode.window.showInformationMessage("Kotonia: ログインしました。新規チャット（＋）で開始できます。");
     } else {
       vscode.window.showErrorMessage(
         "Kotonia: login did not complete. See the “Kotonia Agent” output channel.",

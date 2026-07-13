@@ -6,6 +6,7 @@
   "cmd.refreshSessions.title": "セッション一覧を更新",
   "cmd.openSession.title": "Kotonia: セッションを開く",
   "cmd.login.title": "Kotonia: ログイン（デバイスコード）",
+  "cmd.logout.title": "Kotonia: ログアウト",
   "cmd.selectModel.title": "Kotonia: モデルを選択",
   "cmd.toggleAvatar.title": "Kotonia: 喋るアバターの切り替え",
   "cmd.selectAvatar.title": "Kotonia: アバターを選択",
