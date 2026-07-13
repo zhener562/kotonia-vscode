@@ -86,11 +86,6 @@
           "group": "navigation@9"
         },
         {
-          "command": "kotonia.help",
-          "when": "view == kotonia.sessions",
-          "group": "9_more@0"
-        },
-        {
           "command": "kotonia.showAvatar",
           "when": "view == kotonia.sessions",
           "group": "9_more@1"
@@ -114,6 +109,11 @@
           "command": "kotonia.setDeepSeekApiKey",
           "when": "view == kotonia.sessions",
           "group": "9_more@5"
+        },
+        {
+          "command": "kotonia.help",
+          "when": "view == kotonia.sessions",
+          "group": "9_more@9"
         }
       ]
     },
