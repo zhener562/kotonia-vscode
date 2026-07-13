@@ -818,7 +818,15 @@ function runLogin(): void {
     if (code === 0) {
       authPromptActive = false;
       refreshLoginContext();
-      vscode.window.showInformationMessage("Kotonia: ログインしました。新規チャット（＋）で開始できます。");
+      // The engine reads the device token once at startup, so a session that
+      // was running with the old/expired token must be restarted to pick up
+      // the fresh one.
+      if (engineState) {
+        vscode.window.showInformationMessage("Kotonia: ログインしました。新しいトークンでセッションを再起動します。");
+        restart();
+      } else {
+        vscode.window.showInformationMessage("Kotonia: ログインしました。新規チャット（＋）で開始できます。");
+      }
     } else {
       vscode.window.showErrorMessage(
         "Kotonia: login did not complete. See the “Kotonia Agent” output channel.",
@@ -1087,9 +1095,16 @@ function execFileP(cmd: string, args: string[]): Promise<void> {
 
 async function gatherEnv(): Promise<Record<string, string>> {
   const env: Record<string, string> = {};
-  const kotonia = await extContext.secrets.get(SECRET_KOTONIA);
-  if (kotonia) {
-    env.KOTONIA_API_KEY = kotonia;
+  // Device login (~/.kotonia/daemon.json) is the primary auth for hosted
+  // models. The engine PREFERS KOTONIA_API_KEY over the device token, so a
+  // leftover/stale KOTONIA_API_KEY secret would silently override a valid
+  // login and 401. Only inject the key when NOT device-logged-in.
+  const daemonJson = path.join(os.homedir(), ".kotonia", "daemon.json");
+  if (!fs.existsSync(daemonJson)) {
+    const kotonia = await extContext.secrets.get(SECRET_KOTONIA);
+    if (kotonia) {
+      env.KOTONIA_API_KEY = kotonia;
+    }
   }
   const deepseek = await extContext.secrets.get(SECRET_DEEPSEEK);
   if (deepseek) {
