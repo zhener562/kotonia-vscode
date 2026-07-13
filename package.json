@@ -106,14 +106,9 @@
           "group": "9_more@4"
         },
         {
-          "command": "kotonia.setKotoniaApiKey",
-          "when": "view == kotonia.sessions",
-          "group": "9_more@5"
-        },
-        {
           "command": "kotonia.setDeepSeekApiKey",
           "when": "view == kotonia.sessions",
-          "group": "9_more@6"
+          "group": "9_more@5"
         }
       ]
     },

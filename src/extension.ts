@@ -131,6 +131,34 @@ function refreshLoginContext(): void {
   void vscode.commands.executeCommand("setContext", "kotonia.loggedIn", isLoggedIn());
 }
 
+/** Shown once (until re-login / new session) when the engine reports an auth
+ * failure — usually an expired device token. The "logged in" toolbar state is
+ * file-existence only, so a stale daemon.json still reads as logged in. */
+let authPromptActive = false;
+function maybePromptReLogin(message: string): void {
+  const m = (message || "").toLowerCase();
+  const isAuth =
+    m.includes("401") ||
+    m.includes("bearer token") ||
+    m.includes("device token") ||
+    m.includes("missing or invalid") ||
+    m.includes("unauthorized");
+  if (!isAuth || authPromptActive) {
+    return;
+  }
+  authPromptActive = true;
+  void vscode.window
+    .showWarningMessage(
+      "Kotonia: 認証エラー（デバイストークンの期限切れの可能性）。再ログインしてください。",
+      "ログイン",
+    )
+    .then((choice) => {
+      if (choice === "ログイン") {
+        runLogin();
+      }
+    });
+}
+
 async function logout(): Promise<void> {
   const ok = await vscode.window.showWarningMessage(
     "Kotonia: ログアウトしますか？ デバイスの認証情報（~/.kotonia/daemon.json）を削除します。",
@@ -194,6 +222,7 @@ function restart(resumeSessionId?: string): void {
   engineState?.engine.dispose();
   engineState = undefined;
   speakAbort?.abort();
+  authPromptActive = false;
   ui.reset();
   startEngine(resumeSessionId);
 }
@@ -307,6 +336,9 @@ function onEngineMessage(msg: Outbound): void {
   }
   if (msg.type === "done") {
     sessionTree.refresh();
+  }
+  if (msg.type === "error") {
+    maybePromptReLogin(msg.message);
   }
 
   if (msg.type === "approval_request") {
@@ -784,6 +816,7 @@ function runLogin(): void {
   );
   child.on("exit", (code) => {
     if (code === 0) {
+      authPromptActive = false;
       refreshLoginContext();
       vscode.window.showInformationMessage("Kotonia: ログインしました。新規チャット（＋）で開始できます。");
     } else {
