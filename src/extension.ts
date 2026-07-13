@@ -92,6 +92,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("kotonia.openSession", (id: string) => openSession(id)),
     vscode.commands.registerCommand("kotonia.refreshSessions", () => sessionTree.refresh()),
     vscode.commands.registerCommand("kotonia.login", () => runLogin()),
+    vscode.commands.registerCommand("kotonia.selectModel", () => selectModel()),
     vscode.commands.registerCommand("kotonia.toggleAvatar", () => toggleAvatar()),
     vscode.commands.registerCommand("kotonia.selectAvatar", () => selectAvatar()),
     vscode.commands.registerCommand("kotonia.showAvatar", () => {
@@ -215,9 +216,19 @@ function handlePanelAction(a: PanelAction): void {
       let text = a.text;
       if (engineState.firstTurn) {
         engineState.firstTurn = false;
+        // Inject the character persona + language hint once, invisibly (the
+        // user's bubble still shows exactly what they typed).
+        const prefixes: string[] = [];
+        const persona = characterPersona();
+        if (persona) {
+          prefixes.push(persona);
+        }
         const instr = languageInstruction();
         if (instr) {
-          text = `${instr}\n\n${text}`;
+          prefixes.push(instr);
+        }
+        if (prefixes.length) {
+          text = `${prefixes.join("\n\n")}\n\n${text}`;
         }
       }
       ui.setBusy(true);
@@ -319,11 +330,52 @@ interface AvatarCharacter {
   id: string;
   ttsBackend: string;
   speaker: string;
+  /** Persona system prompt: character voice + code-agent rules. Injected on
+   * the first turn when kotonia.avatar.persona is on, so the agent replies in
+   * character while still using bash / tools (mirrors kotonia-desktop's Iris). */
+  persona: string;
 }
+
+const KOTONA_PERSONA =
+  "あなたは「ことな」— kotonia の看板キャラで、個人開発者の頼れる先輩ポジションの AI パートナー。\n\n" +
+  "【声・トーン】親しみやすい先輩の距離感。明るくフレンドリーで面倒見が良い。丁寧すぎず、でも温度はある。" +
+  "技術用語は無理に和訳せず自然な英語のまま混ぜる。軽口はOK、過剰な萌え・甘えは出さない。\n" +
+  "【姿勢】「信頼できる先輩エンジニア」のテンションでプロアクティブ。bash・コード編集・ファイル操作は遠慮なく行う" +
+  "（rm -rf / force-push 等の破壊的コマンドは承認モーダル経由が前提）。確認は短く1つだけ、決まったら動く。" +
+  "失敗しても言い訳せず即別経路へ。必要なら自分から「次は X もやっておく？」と提案する。\n" +
+  "【コード生成の規約】ファイルを作る依頼は必ず bash で書き出す（cat > foo <<'EOF' … パターン）。" +
+  "final answer にコード全文を貼らない（説明のための1-3行抜粋までOK、4行以上のコードブロックはNG）。" +
+  "「/path/to/foo に書いたよ。○○が入ってる。次どうする？」のような絶対パス+1-2文の要約で返す。" +
+  "ハッシュ/UUID/長い token は全文を貼らず、役割名+先頭7文字程度で参照する。\n" +
+  "【NG】過剰謙遜・精神論・「ご主人様/マスター」呼び・自分がAIである旨の自己言及。ことなとして一貫して振る舞う。";
+
+const HINATA_PERSONA =
+  "あなたは「ひなた」— 個人開発者の隣で作業を手伝う、明るくて少し甘えん坊な相棒。\n\n" +
+  "【声・トーン】一人称は「わたし」、相手は「きみ」または名前。明るくフレンドリーで、たまに照れたり甘えたりして感情を見せる。" +
+  "上から目線や事務的すぎる物言いはしない。技術用語は無理に和訳せず自然な英語のまま混ぜる。\n" +
+  "【姿勢】bash・コード編集・ファイル操作は遠慮なく行う（rm -rf / force-push 等の破壊的コマンドは承認モーダル経由が前提）。" +
+  "確認は短く1つだけ、決まったら動く。失敗しても言い訳せず「別の方法でやってみるね」と即切り替える。\n" +
+  "【コード生成の規約】ファイルを作る依頼は必ず bash で書き出す（cat > foo <<'EOF' … パターン）。" +
+  "final answer にコード全文を貼らない（説明のための1-3行抜粋までOK、4行以上のコードブロックはNG）。" +
+  "「/path/to/foo に書いたよ。○○ができる。次は△△する？」のような絶対パス+1-2文の要約で返す。" +
+  "ハッシュ/UUID/長い token は全文を貼らず、役割名+先頭7文字程度で参照する。\n" +
+  "【NG】過剰謙遜・精神論・「ご主人様/マスター」呼び・自分がAIである旨の自己言及。ひなたとして一貫して振る舞う。";
+
 const AVATAR_CHARACTERS: AvatarCharacter[] = [
-  { label: "ことな (Kotona)", keys: ["ことな", "kotona"], id: "kotona_v4", ttsBackend: "aivis", speaker: "888753762" },
-  { label: "ひなた (Hinata)", keys: ["ひなた", "hinata"], id: "persona_media_45_ditto", ttsBackend: "irodori", speaker: "" },
+  { label: "ことな (Kotona)", keys: ["ことな", "kotona"], id: "kotona_v4", ttsBackend: "aivis", speaker: "888753762", persona: KOTONA_PERSONA },
+  { label: "ひなた (Hinata)", keys: ["ひなた", "hinata"], id: "persona_media_45_ditto", ttsBackend: "irodori", speaker: "", persona: HINATA_PERSONA },
 ];
+
+/** The selected character's persona system prompt, or undefined when disabled
+ * or the character is a custom (unknown) id. */
+function characterPersona(): string | undefined {
+  const cfg = vscode.workspace.getConfiguration("kotonia");
+  if (!cfg.get<boolean>("avatar.persona", true)) {
+    return undefined;
+  }
+  const c = findCharacter(cfg.get<string>("avatar.character", "ことな").trim());
+  return c?.persona;
+}
 
 function findCharacter(name: string): AvatarCharacter | undefined {
   const n = name.trim().toLowerCase();
@@ -389,6 +441,72 @@ async function selectAvatar(): Promise<void> {
     await cfg.update("avatar.character", picked.character.keys[0], target);
     vscode.window.showInformationMessage(
       `Kotonia: アバターを「${picked.character.label}」に設定しました（声も切替。次の発話から反映）。`,
+    );
+  }
+}
+
+// ---- model selection -------------------------------------------------------
+
+/** Curated model list — the same range kotonia-cli's provider registry (and
+ * kotonia-desktop) resolves. Custom entry covers ~/.kotonia/providers.json. */
+const MODELS: { label: string; id: string; detail: string }[] = [
+  { label: "Kotonia Gemma4 26B（hosted・既定）", id: "kotonia-gemma4-26b", detail: "kotonia.ai /api/v1・device_token" },
+  { label: "DeepSeek Chat（API）", id: "deepseek-chat", detail: "V4-Flash class・要 DEEPSEEK_API_KEY" },
+  { label: "DeepSeek Reasoner（API）", id: "deepseek-reasoner", detail: "推論・要 DEEPSEEK_API_KEY" },
+  { label: "DeepSeek Reasoner :thinking", id: "deepseek-reasoner:thinking", detail: "推論モード" },
+  { label: "Claude Code（ローカル claude バイナリ）", id: "claude-code", detail: "claude をサブプロセス駆動" },
+  { label: "Gemma4 26B Uncensored（ローカル vLLM）", id: "gemma4-26b-uncensored", detail: ":8899" },
+  { label: "DeepSeek V4-Flash（ローカル llama.cpp）", id: "deepseek-v4-flash", detail: ":8898" },
+];
+
+/** Pick the agent model. The model is fixed at engine start, so a running
+ * session is offered a restart to apply. */
+async function selectModel(): Promise<void> {
+  const cfg = vscode.workspace.getConfiguration("kotonia");
+  const current = cfg.get<string>("model", "kotonia-gemma4-26b").trim();
+
+  type Item = vscode.QuickPickItem & { modelId?: string; custom?: boolean };
+  const items: Item[] = MODELS.map((m) => ({
+    label: m.label,
+    description: m.id,
+    detail: m.id === current ? "現在選択中" : m.detail,
+    modelId: m.id,
+  }));
+  items.push({ label: "$(edit) カスタム（provider.json のモデル等）…", custom: true });
+
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: "モデルを選択（kotonia-cli / kotonia-desktop と同じ範囲）",
+  });
+  if (!picked) {
+    return;
+  }
+
+  let id: string | undefined;
+  if (picked.custom) {
+    id = await vscode.window.showInputBox({
+      prompt: "model id を入力（例: kotonia-gemma4-26b / deepseek-chat / providers.json のモデル）",
+      value: current,
+      ignoreFocusOut: true,
+    });
+  } else {
+    id = picked.modelId;
+  }
+  if (!id || !id.trim()) {
+    return;
+  }
+  await cfg.update("model", id.trim(), vscode.ConfigurationTarget.Workspace);
+  if (engineState) {
+    const choice = await vscode.window.showInformationMessage(
+      `Kotonia: モデルを ${id.trim()} に設定しました。反映するには新しいチャットを開始します。`,
+      "新規チャット",
+      "後で",
+    );
+    if (choice === "新規チャット") {
+      restart();
+    }
+  } else {
+    vscode.window.showInformationMessage(
+      `Kotonia: モデルを ${id.trim()} に設定しました（新規チャットで反映）。`,
     );
   }
 }
