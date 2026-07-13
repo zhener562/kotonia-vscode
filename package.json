@@ -66,39 +66,54 @@
           "group": "navigation@2"
         },
         {
-          "command": "kotonia.newChat",
+          "command": "kotonia.selectModel",
           "when": "view == kotonia.sessions",
-          "group": "0_session@1"
-        },
-        {
-          "command": "kotonia.refreshSessions",
-          "when": "view == kotonia.sessions",
-          "group": "0_session@2"
-        },
-        {
-          "command": "kotonia.login",
-          "when": "view == kotonia.sessions",
-          "group": "1_auth"
-        },
-        {
-          "command": "kotonia.toggleAvatar",
-          "when": "view == kotonia.sessions",
-          "group": "1_auth"
+          "group": "navigation@3"
         },
         {
           "command": "kotonia.selectAvatar",
           "when": "view == kotonia.sessions",
-          "group": "1_auth"
+          "group": "navigation@4"
+        },
+        {
+          "command": "kotonia.login",
+          "when": "view == kotonia.sessions && !kotonia.loggedIn",
+          "group": "navigation@9"
+        },
+        {
+          "command": "kotonia.logout",
+          "when": "view == kotonia.sessions && kotonia.loggedIn",
+          "group": "navigation@9"
+        },
+        {
+          "command": "kotonia.showAvatar",
+          "when": "view == kotonia.sessions",
+          "group": "9_more@1"
+        },
+        {
+          "command": "kotonia.toggleAvatar",
+          "when": "view == kotonia.sessions",
+          "group": "9_more@2"
         },
         {
           "command": "kotonia.reviewChanges",
           "when": "view == kotonia.sessions",
-          "group": "2_worktree"
+          "group": "9_more@3"
         },
         {
           "command": "kotonia.applyChanges",
           "when": "view == kotonia.sessions",
-          "group": "2_worktree"
+          "group": "9_more@4"
+        },
+        {
+          "command": "kotonia.setDeepSeekApiKey",
+          "when": "view == kotonia.sessions",
+          "group": "9_more@5"
+        },
+        {
+          "command": "kotonia.help",
+          "when": "view == kotonia.sessions",
+          "group": "9_more@9"
         }
       ]
     },
@@ -128,7 +143,20 @@
       {
         "command": "kotonia.login",
         "title": "%cmd.login.title%",
-        "category": "Kotonia"
+        "category": "Kotonia",
+        "icon": "$(sign-in)"
+      },
+      {
+        "command": "kotonia.logout",
+        "title": "%cmd.logout.title%",
+        "category": "Kotonia",
+        "icon": "$(sign-out)"
+      },
+      {
+        "command": "kotonia.selectModel",
+        "title": "%cmd.selectModel.title%",
+        "category": "Kotonia",
+        "icon": "$(chip)"
       },
       {
         "command": "kotonia.toggleAvatar",
@@ -138,7 +166,19 @@
       {
         "command": "kotonia.selectAvatar",
         "title": "%cmd.selectAvatar.title%",
+        "category": "Kotonia",
+        "icon": "$(account)"
+      },
+      {
+        "command": "kotonia.showAvatar",
+        "title": "%cmd.showAvatar.title%",
         "category": "Kotonia"
+      },
+      {
+        "command": "kotonia.help",
+        "title": "%cmd.help.title%",
+        "category": "Kotonia",
+        "icon": "$(question)"
       },
       {
         "command": "kotonia.cancel",
@@ -214,12 +254,22 @@
         "kotonia.avatar.enabled": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Show a talking lip-sync avatar (Ditto) that speaks each final answer. Streams from kotonia.ai `/api/voice/ditto/tts/stream/avatar` using your device login. Requires a registered `kotonia.avatar.id` and the Ditto/TTS servers running."
+          "markdownDescription": "Show a talking lip-sync avatar (Ditto) that speaks each final answer, in its own movable/resizable panel. Streams from kotonia.ai `/api/voice/ditto/tts/stream/avatar` using your device login; needs the Ditto/TTS servers running."
+        },
+        "kotonia.avatar.character": {
+          "type": "string",
+          "default": "ことな",
+          "markdownDescription": "Talking avatar **by name**. `ことな` (Kotona, AivisSpeech voice) or `ひなた` (Hinata, Irodori voice) resolve to the right avatar + voice automatically. Any other value is treated as a raw `avatar_id` (voice from `kotonia.avatar.ttsBackend` / `.speaker`). Use **Kotonia: アバターを選択** to pick."
+        },
+        "kotonia.avatar.persona": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Apply the selected character's personality (ことな / ひなた) to the agent's replies — it speaks in character while still using bash / tools. Injected once per session on the first turn. Turn off for a plain, neutral agent."
         },
         "kotonia.avatar.id": {
           "type": "string",
           "default": "kotona_v4",
-          "markdownDescription": "Registered Ditto avatar id. Defaults to the Kotona mascot (`kotona_v4`). Use **Kotonia: アバターを選択 / Select Avatar** to pick from the avatars registered on the server (ことな / ひなた / …) or enter any id. `kotona_v1`–`v3`, `hinata_*`, and your own (via `/api/voice/ditto/prepare`) also work."
+          "markdownDescription": "Advanced: raw Ditto `avatar_id` used only when `kotonia.avatar.character` is not a known name. Normally set the character by name instead."
         },
         "kotonia.avatar.ttsBackend": {
           "type": "string",

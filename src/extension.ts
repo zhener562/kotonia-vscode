@@ -12,6 +12,7 @@ import * as https from "https";
 import { execFile, spawn } from "child_process";
 import { KotoniaEngine } from "./engine";
 import { ChatPanel } from "./panel";
+import { AvatarPanel } from "./avatarPanel";
 import { SessionTreeProvider } from "./sessionTree";
 import { PanelAction } from "./webview";
 import { EditorContext, Hello, Outbound } from "./protocol";
@@ -30,6 +31,7 @@ interface EngineState {
 }
 
 let chatPanel: ChatPanel | undefined;
+let avatarPanel: AvatarPanel | undefined;
 let engineState: EngineState | undefined;
 let sessionTree: SessionTreeProvider;
 let output: vscode.OutputChannel;
@@ -51,18 +53,111 @@ const ui = {
     chatPanel?.reset();
   },
   avatarBegin(): void {
-    chatPanel?.avatarBegin();
+    ensureAvatarPanel();
+    avatarPanel?.begin();
   },
   avatarChunk(chunkType: number, data: string): void {
-    chatPanel?.avatarChunk(chunkType, data);
+    avatarPanel?.chunk(chunkType, data);
   },
   avatarEnd(): void {
-    chatPanel?.avatarEnd();
+    avatarPanel?.end();
   },
   avatarStop(): void {
-    chatPanel?.avatarStop();
+    avatarPanel?.stop();
   },
 };
+
+let helpPanel: vscode.WebviewPanel | undefined;
+
+/** Open a read-only help panel listing every toolbar button, … menu action,
+ * and key setting, with what each does. */
+function showHelp(): void {
+  if (helpPanel) {
+    helpPanel.reveal();
+    return;
+  }
+  helpPanel = vscode.window.createWebviewPanel(
+    "kotoniaHelp",
+    "Kotonia ヘルプ",
+    vscode.ViewColumn.Active,
+    { enableScripts: false, retainContextWhenHidden: true },
+  );
+  helpPanel.iconPath = vscode.Uri.joinPath(extContext.extensionUri, "media", "icon.png");
+  helpPanel.webview.html = HELP_HTML;
+  helpPanel.onDidDispose(() => {
+    helpPanel = undefined;
+  });
+}
+
+const HELP_HTML = `<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';" />
+<style>
+  body { font-family: var(--vscode-font-family); color: var(--vscode-foreground);
+    background: var(--vscode-editor-background); padding: 18px 24px; line-height: 1.7; }
+  h1 { font-size: 1.4em; border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 6px; }
+  h2 { font-size: 1.12em; margin-top: 1.6em; color: var(--vscode-foreground); }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 4px; }
+  th, td { text-align: left; vertical-align: top; padding: 6px 10px;
+    border-bottom: 1px solid var(--vscode-panel-border); }
+  th { color: var(--vscode-descriptionForeground); font-weight: 600; white-space: nowrap; }
+  td.k { white-space: nowrap; font-weight: 600; }
+  code { background: var(--vscode-textCodeBlock-background); padding: 1px 5px; border-radius: 3px; }
+  .dim { color: var(--vscode-descriptionForeground); }
+  .icon { font-family: var(--vscode-editor-font-family, monospace); }
+</style></head>
+<body>
+  <h1>🔥 Kotonia Agent — 機能ヘルプ</h1>
+  <p class="dim">左サイドバー「セッション」ビューのタイトルバー（アイコンボタン）と「…」メニューの各機能です。</p>
+
+  <h2>ツールバー（アイコンボタン・よく使う）</h2>
+  <table>
+    <tr><th>ボタン</th><th>できること</th></tr>
+    <tr><td class="k"><span class="icon">＋</span> 新規チャット</td><td>新しいセッション（エンジン）を開始して中央のチャットを開く。</td></tr>
+    <tr><td class="k"><span class="icon">⟳</span> 更新</td><td>左のセッション一覧を再読み込み。</td></tr>
+    <tr><td class="k"><span class="icon">▷</span> モデルを選択</td><td>使う LLM を切替（<code>kotonia-gemma4-26b</code> / <code>deepseek-chat</code> / <code>claude-code</code> / ローカル / カスタム）。反映は新規チャットから。</td></tr>
+    <tr><td class="k"><span class="icon">☺</span> アバターを選択</td><td>ことな / ひなた を名前で選択。<b>声＋キャラ性格（persona）</b>もまとめて切替。カスタムで任意の avatar_id も可。</td></tr>
+    <tr><td class="k"><span class="icon">⇥</span> ログイン / ログアウト</td><td>kotonia.ai にデバイスログイン（ブラウザで承認）。ログイン中は「ログアウト」表示。ホストモデルはこれだけで使える。</td></tr>
+  </table>
+
+  <h2>「…」メニュー（あまり使わない）</h2>
+  <table>
+    <tr><th>項目</th><th>できること</th></tr>
+    <tr><td class="k">ヘルプ（機能一覧）</td><td>この画面。</td></tr>
+    <tr><td class="k">アバターパネルを表示</td><td>喋るアバターの専用パネルを開く。<b>ドラッグで移動・境界で拡縮</b>、タブ右クリック →「エディターを新しいウィンドウに移動」で<b>VS Code の外に浮かせられる</b>。通常は発話時に自動で開く。</td></tr>
+    <tr><td class="k">アバターON/OFF</td><td>喋るリップシンクアバターの有効／無効。OFF でテキストのみ。</td></tr>
+    <tr><td class="k">エージェントの変更を確認</td><td><code>worktree</code> モード時、エージェントが加えた変更の git 差分を表示。</td></tr>
+    <tr><td class="k">変更をワークスペースに適用</td><td>worktree の変更を実際の作業コピーへ取り込む（確認あり）。</td></tr>
+    <tr><td class="k">DeepSeek API キーを設定</td><td><code>deepseek-*</code> モデルを使う時の鍵を保存。Kotonia モデルはログインのみでOK。</td></tr>
+  </table>
+
+  <h2>入力欄</h2>
+  <p><b>Enter</b> で送信 / <b>Shift+Enter</b> で改行（日本語変換中の Enter は確定のみで送信されません）。承認が必要なコマンドはチャット内にボタンで出ます（「remember」で同種を今セッション自動承認）。</p>
+
+  <h2>主な設定（<code>settings.json</code> / 設定UI で <code>kotonia.</code> 検索）</h2>
+  <table>
+    <tr><th>設定</th><th>意味</th></tr>
+    <tr><td class="k">kotonia.model</td><td>使用モデル。</td></tr>
+    <tr><td class="k">kotonia.avatar.character</td><td>アバター（ことな / ひなた / 任意 avatar_id）。</td></tr>
+    <tr><td class="k">kotonia.avatar.persona</td><td>選んだキャラの性格で応答するか（既定 ON）。</td></tr>
+    <tr><td class="k">kotonia.avatar.enabled</td><td>喋るアバターの ON/OFF。</td></tr>
+    <tr><td class="k">kotonia.language</td><td>既定の回答言語（<code>ja</code> など）。</td></tr>
+    <tr><td class="k">kotonia.workspaceMode</td><td><code>worktree</code>（隔離・要レビュー）か <code>in-place</code>（直接編集）。</td></tr>
+    <tr><td class="k">kotonia.approvalMode</td><td>コマンド承認の厳しさ（<code>all</code> / <code>allowlist</code> / <code>auto</code>）。</td></tr>
+  </table>
+</body></html>`;
+
+/** Open the dedicated avatar panel if it isn't already up. It lives in the
+ * editor area so the user can move / resize / float it (Move Editor into New
+ * Window) independently of the chat. */
+function ensureAvatarPanel(): void {
+  if (avatarPanel) {
+    return;
+  }
+  avatarPanel = new AvatarPanel(extContext.extensionUri, () => {
+    avatarPanel = undefined;
+  });
+}
 
 export function activate(context: vscode.ExtensionContext): void {
   extContext = context;
@@ -77,8 +172,15 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("kotonia.openSession", (id: string) => openSession(id)),
     vscode.commands.registerCommand("kotonia.refreshSessions", () => sessionTree.refresh()),
     vscode.commands.registerCommand("kotonia.login", () => runLogin()),
+    vscode.commands.registerCommand("kotonia.logout", () => logout()),
+    vscode.commands.registerCommand("kotonia.selectModel", () => selectModel()),
     vscode.commands.registerCommand("kotonia.toggleAvatar", () => toggleAvatar()),
     vscode.commands.registerCommand("kotonia.selectAvatar", () => selectAvatar()),
+    vscode.commands.registerCommand("kotonia.showAvatar", () => {
+      ensureAvatarPanel();
+      avatarPanel?.reveal();
+    }),
+    vscode.commands.registerCommand("kotonia.help", () => showHelp()),
     vscode.commands.registerCommand("kotonia.cancel", () => engineState?.engine.cancel()),
     vscode.commands.registerCommand("kotonia.reviewChanges", () => reviewChanges()),
     vscode.commands.registerCommand("kotonia.applyChanges", () => applyChanges()),
@@ -89,11 +191,78 @@ export function activate(context: vscode.ExtensionContext): void {
       promptSecret(SECRET_DEEPSEEK, "DeepSeek API key (DEEPSEEK_API_KEY)"),
     ),
   );
+
+  refreshLoginContext();
+}
+
+/** True when a device login (~/.kotonia/daemon.json) or KOTONIA_API_KEY is
+ * present. Drives the login/logout toggle in the view toolbar. */
+function isLoggedIn(): boolean {
+  if (process.env.KOTONIA_API_KEY) {
+    return true;
+  }
+  try {
+    return fs.existsSync(path.join(os.homedir(), ".kotonia", "daemon.json"));
+  } catch {
+    return false;
+  }
+}
+
+function refreshLoginContext(): void {
+  void vscode.commands.executeCommand("setContext", "kotonia.loggedIn", isLoggedIn());
+}
+
+/** Shown once (until re-login / new session) when the engine reports an auth
+ * failure — usually an expired device token. The "logged in" toolbar state is
+ * file-existence only, so a stale daemon.json still reads as logged in. */
+let authPromptActive = false;
+function maybePromptReLogin(message: string): void {
+  const m = (message || "").toLowerCase();
+  const isAuth =
+    m.includes("401") ||
+    m.includes("bearer token") ||
+    m.includes("device token") ||
+    m.includes("missing or invalid") ||
+    m.includes("unauthorized");
+  if (!isAuth || authPromptActive) {
+    return;
+  }
+  authPromptActive = true;
+  void vscode.window
+    .showWarningMessage(
+      "Kotonia: 認証エラー（デバイストークンの期限切れの可能性）。再ログインしてください。",
+      "ログイン",
+    )
+    .then((choice) => {
+      if (choice === "ログイン") {
+        runLogin();
+      }
+    });
+}
+
+async function logout(): Promise<void> {
+  const ok = await vscode.window.showWarningMessage(
+    "Kotonia: ログアウトしますか？ デバイスの認証情報（~/.kotonia/daemon.json）を削除します。",
+    { modal: true },
+    "ログアウト",
+  );
+  if (ok !== "ログアウト") {
+    return;
+  }
+  try {
+    fs.unlinkSync(path.join(os.homedir(), ".kotonia", "daemon.json"));
+  } catch {
+    /* already gone */
+  }
+  refreshLoginContext();
+  vscode.window.showInformationMessage("Kotonia: ログアウトしました。");
 }
 
 export function deactivate(): void {
   engineState?.engine.dispose();
   engineState = undefined;
+  avatarPanel?.dispose();
+  avatarPanel = undefined;
 }
 
 // ---- chat panel + engine lifecycle -----------------------------------------
@@ -134,6 +303,7 @@ function restart(resumeSessionId?: string): void {
   engineState?.engine.dispose();
   engineState = undefined;
   speakAbort?.abort();
+  authPromptActive = false;
   ui.reset();
   startEngine(resumeSessionId);
 }
@@ -194,9 +364,19 @@ function handlePanelAction(a: PanelAction): void {
       let text = a.text;
       if (engineState.firstTurn) {
         engineState.firstTurn = false;
+        // Inject the character persona + language hint once, invisibly (the
+        // user's bubble still shows exactly what they typed).
+        const prefixes: string[] = [];
+        const persona = characterPersona();
+        if (persona) {
+          prefixes.push(persona);
+        }
         const instr = languageInstruction();
         if (instr) {
-          text = `${instr}\n\n${text}`;
+          prefixes.push(instr);
+        }
+        if (prefixes.length) {
+          text = `${prefixes.join("\n\n")}\n\n${text}`;
         }
       }
       ui.setBusy(true);
@@ -238,6 +418,9 @@ function onEngineMessage(msg: Outbound): void {
   if (msg.type === "done") {
     sessionTree.refresh();
   }
+  if (msg.type === "error") {
+    maybePromptReLogin(msg.message);
+  }
 
   if (msg.type === "approval_request") {
     const tok = leadingToken(msg.command);
@@ -275,49 +458,119 @@ function toggleAvatar(): void {
   const cfg = vscode.workspace.getConfiguration("kotonia");
   const next = !cfg.get<boolean>("avatar.enabled", false);
   void cfg.update("avatar.enabled", next, vscode.ConfigurationTarget.Workspace);
-  if (next && !cfg.get<string>("avatar.id", "").trim()) {
-    vscode.window.showInformationMessage(
-      "Kotonia: avatar on — set a registered avatar id in kotonia.avatar.id to see it speak.",
-    );
+  if (next) {
+    const name = cfg.get<string>("avatar.character", "ことな").trim();
+    ensureAvatarPanel();
+    ui.note(`talking avatar ON（${name}）.`);
+  } else {
+    ui.note("talking avatar OFF.");
   }
-  ui.note(`talking avatar ${next ? "ON" : "OFF"}.`);
   if (!next) {
     speakAbort?.abort();
     ui.avatarStop();
   }
 }
 
-/** Curated avatar presets — each carries its canonical voice so picking a
- * character sets the right avatar_id AND TTS backend/speaker. Add entries as
- * kotonia registers more mascots. */
-interface AvatarPreset {
+/** Named avatar characters. The user picks one by NAME
+ * (`kotonia.avatar.character` = "ことな" / "ひなた"); each carries its
+ * canonical avatar_id AND voice so the character sounds right. */
+interface AvatarCharacter {
   label: string;
+  /** Names/aliases that select this character. First entry is canonical. */
+  keys: string[];
   id: string;
   ttsBackend: string;
   speaker: string;
+  /** Persona system prompt: character voice + code-agent rules. Injected on
+   * the first turn when kotonia.avatar.persona is on, so the agent replies in
+   * character while still using bash / tools (mirrors kotonia-desktop's Iris). */
+  persona: string;
 }
-const AVATAR_PRESETS: AvatarPreset[] = [
-  { label: "ことな (Kotona)", id: "kotona_v4", ttsBackend: "aivis", speaker: "888753762" },
-  { label: "ひなた (Hinata)", id: "persona_media_45_ditto", ttsBackend: "irodori", speaker: "" },
+
+const KOTONA_PERSONA =
+  "あなたは「ことな」— kotonia の看板キャラで、個人開発者の頼れる先輩ポジションの AI パートナー。\n\n" +
+  "【声・トーン】親しみやすい先輩の距離感。明るくフレンドリーで面倒見が良い。丁寧すぎず、でも温度はある。" +
+  "技術用語は無理に和訳せず自然な英語のまま混ぜる。軽口はOK、過剰な萌え・甘えは出さない。\n" +
+  "【姿勢】「信頼できる先輩エンジニア」のテンションでプロアクティブ。bash・コード編集・ファイル操作は遠慮なく行う" +
+  "（rm -rf / force-push 等の破壊的コマンドは承認モーダル経由が前提）。確認は短く1つだけ、決まったら動く。" +
+  "失敗しても言い訳せず即別経路へ。必要なら自分から「次は X もやっておく？」と提案する。\n" +
+  "【コード生成の規約】ファイルを作る依頼は必ず bash で書き出す（cat > foo <<'EOF' … パターン）。" +
+  "final answer にコード全文を貼らない（説明のための1-3行抜粋までOK、4行以上のコードブロックはNG）。" +
+  "「/path/to/foo に書いたよ。○○が入ってる。次どうする？」のような絶対パス+1-2文の要約で返す。" +
+  "ハッシュ/UUID/長い token は全文を貼らず、役割名+先頭7文字程度で参照する。\n" +
+  "【NG】過剰謙遜・精神論・「ご主人様/マスター」呼び・自分がAIである旨の自己言及。ことなとして一貫して振る舞う。";
+
+const HINATA_PERSONA =
+  "あなたは「ひなた」— 個人開発者の隣で作業を手伝う、明るくて少し甘えん坊な相棒。\n\n" +
+  "【声・トーン】一人称は「わたし」、相手は「きみ」または名前。明るくフレンドリーで、たまに照れたり甘えたりして感情を見せる。" +
+  "上から目線や事務的すぎる物言いはしない。技術用語は無理に和訳せず自然な英語のまま混ぜる。\n" +
+  "【姿勢】bash・コード編集・ファイル操作は遠慮なく行う（rm -rf / force-push 等の破壊的コマンドは承認モーダル経由が前提）。" +
+  "確認は短く1つだけ、決まったら動く。失敗しても言い訳せず「別の方法でやってみるね」と即切り替える。\n" +
+  "【コード生成の規約】ファイルを作る依頼は必ず bash で書き出す（cat > foo <<'EOF' … パターン）。" +
+  "final answer にコード全文を貼らない（説明のための1-3行抜粋までOK、4行以上のコードブロックはNG）。" +
+  "「/path/to/foo に書いたよ。○○ができる。次は△△する？」のような絶対パス+1-2文の要約で返す。" +
+  "ハッシュ/UUID/長い token は全文を貼らず、役割名+先頭7文字程度で参照する。\n" +
+  "【NG】過剰謙遜・精神論・「ご主人様/マスター」呼び・自分がAIである旨の自己言及。ひなたとして一貫して振る舞う。";
+
+const AVATAR_CHARACTERS: AvatarCharacter[] = [
+  { label: "ことな (Kotona)", keys: ["ことな", "kotona"], id: "kotona_v4", ttsBackend: "aivis", speaker: "888753762", persona: KOTONA_PERSONA },
+  { label: "ひなた (Hinata)", keys: ["ひなた", "hinata"], id: "persona_media_45_ditto", ttsBackend: "irodori", speaker: "", persona: HINATA_PERSONA },
 ];
 
-/** Pick the talking avatar from the curated presets (ことな / ひなた) — which
- * also switch the voice — or enter any registered avatar id directly. */
+/** The selected character's persona system prompt, or undefined when disabled
+ * or the character is a custom (unknown) id. */
+function characterPersona(): string | undefined {
+  const cfg = vscode.workspace.getConfiguration("kotonia");
+  if (!cfg.get<boolean>("avatar.persona", true)) {
+    return undefined;
+  }
+  const c = findCharacter(cfg.get<string>("avatar.character", "ことな").trim());
+  return c?.persona;
+}
+
+function findCharacter(name: string): AvatarCharacter | undefined {
+  const n = name.trim().toLowerCase();
+  return AVATAR_CHARACTERS.find((c) => c.keys.some((k) => k.toLowerCase() === n));
+}
+
+/** Resolve the configured avatar to a concrete {id, ttsBackend, speaker}.
+ * `kotonia.avatar.character` holds either a known name (ことな / ひなた →
+ * preset voice) or a raw avatar_id (custom → voice from avatar.ttsBackend /
+ * avatar.speaker). */
+function resolveAvatar(cfg: vscode.WorkspaceConfiguration): {
+  id: string;
+  ttsBackend: string;
+  speaker: string;
+} {
+  const character = cfg.get<string>("avatar.character", "ことな").trim();
+  const c = findCharacter(character);
+  if (c) {
+    return { id: c.id, ttsBackend: c.ttsBackend, speaker: c.speaker };
+  }
+  return {
+    id: character || cfg.get<string>("avatar.id", "").trim(),
+    ttsBackend: cfg.get<string>("avatar.ttsBackend", "aivis"),
+    speaker: cfg.get<string>("avatar.speaker", ""),
+  };
+}
+
+/** Pick the talking avatar by name (ことな / ひなた) or a custom name/avatar_id. */
 async function selectAvatar(): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("kotonia");
-  const current = cfg.get<string>("avatar.id", "").trim();
+  const current = cfg.get<string>("avatar.character", "ことな").trim();
+  const currentChar = findCharacter(current);
 
-  type Item = vscode.QuickPickItem & { preset?: AvatarPreset; custom?: boolean };
-  const items: Item[] = AVATAR_PRESETS.map((p) => ({
-    label: p.label,
-    description: p.id,
-    detail: p.id === current ? "現在選択中" : undefined,
-    preset: p,
+  type Item = vscode.QuickPickItem & { character?: AvatarCharacter; custom?: boolean };
+  const items: Item[] = AVATAR_CHARACTERS.map((c) => ({
+    label: c.label,
+    description: c.id,
+    detail: currentChar?.label === c.label ? "現在選択中" : undefined,
+    character: c,
   }));
-  items.push({ label: "$(edit) カスタムIDを入力…", description: "任意の avatar_id を直接指定", custom: true });
+  items.push({ label: "$(edit) カスタム（名前 / avatar_id を入力）…", custom: true });
 
   const picked = await vscode.window.showQuickPick(items, {
-    placeHolder: "アバターを選択（ことな / ひなた / カスタムID）",
+    placeHolder: "アバターを選択（ことな / ひなた / カスタム）",
   });
   if (!picked) {
     return;
@@ -325,23 +578,86 @@ async function selectAvatar(): Promise<void> {
 
   const target = vscode.ConfigurationTarget.Workspace;
   if (picked.custom) {
-    const id = await vscode.window.showInputBox({
-      prompt: "avatar_id を入力（例: kotona_v4 / persona_media_45_ditto）",
+    const value = await vscode.window.showInputBox({
+      prompt: "キャラ名（ことな / ひなた）または avatar_id を入力",
       value: current,
       ignoreFocusOut: true,
     });
-    if (!id || !id.trim()) {
+    if (!value || !value.trim()) {
       return;
     }
-    await cfg.update("avatar.id", id.trim(), target);
-    vscode.window.showInformationMessage(`Kotonia: アバターを ${id.trim()} に設定しました。`);
-  } else if (picked.preset) {
-    const p = picked.preset;
-    await cfg.update("avatar.id", p.id, target);
-    await cfg.update("avatar.ttsBackend", p.ttsBackend, target);
-    await cfg.update("avatar.speaker", p.speaker, target);
+    await cfg.update("avatar.character", value.trim(), target);
+    vscode.window.showInformationMessage(`Kotonia: アバターを「${value.trim()}」に設定しました。`);
+  } else if (picked.character) {
+    await cfg.update("avatar.character", picked.character.keys[0], target);
     vscode.window.showInformationMessage(
-      `Kotonia: アバターを「${p.label}」に設定しました（声も切替。次の発話から反映）。`,
+      `Kotonia: アバターを「${picked.character.label}」に設定しました（声も切替。次の発話から反映）。`,
+    );
+  }
+}
+
+// ---- model selection -------------------------------------------------------
+
+/** Curated model list — the same range kotonia-cli's provider registry (and
+ * kotonia-desktop) resolves. Custom entry covers ~/.kotonia/providers.json. */
+const MODELS: { label: string; id: string; detail: string }[] = [
+  { label: "Kotonia Gemma4 26B（hosted・既定）", id: "kotonia-gemma4-26b", detail: "kotonia.ai /api/v1・device_token" },
+  { label: "DeepSeek Chat（API）", id: "deepseek-chat", detail: "V4-Flash class・要 DEEPSEEK_API_KEY" },
+  { label: "DeepSeek Reasoner（API）", id: "deepseek-reasoner", detail: "推論・要 DEEPSEEK_API_KEY" },
+  { label: "DeepSeek Reasoner :thinking", id: "deepseek-reasoner:thinking", detail: "推論モード" },
+  { label: "Claude Code（ローカル claude バイナリ）", id: "claude-code", detail: "claude をサブプロセス駆動" },
+  { label: "Gemma4 26B Uncensored（ローカル vLLM）", id: "gemma4-26b-uncensored", detail: ":8899" },
+  { label: "DeepSeek V4-Flash（ローカル llama.cpp）", id: "deepseek-v4-flash", detail: ":8898" },
+];
+
+/** Pick the agent model. The model is fixed at engine start, so a running
+ * session is offered a restart to apply. */
+async function selectModel(): Promise<void> {
+  const cfg = vscode.workspace.getConfiguration("kotonia");
+  const current = cfg.get<string>("model", "kotonia-gemma4-26b").trim();
+
+  type Item = vscode.QuickPickItem & { modelId?: string; custom?: boolean };
+  const items: Item[] = MODELS.map((m) => ({
+    label: m.label,
+    description: m.id,
+    detail: m.id === current ? "現在選択中" : m.detail,
+    modelId: m.id,
+  }));
+  items.push({ label: "$(edit) カスタム（provider.json のモデル等）…", custom: true });
+
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: "モデルを選択（kotonia-cli / kotonia-desktop と同じ範囲）",
+  });
+  if (!picked) {
+    return;
+  }
+
+  let id: string | undefined;
+  if (picked.custom) {
+    id = await vscode.window.showInputBox({
+      prompt: "model id を入力（例: kotonia-gemma4-26b / deepseek-chat / providers.json のモデル）",
+      value: current,
+      ignoreFocusOut: true,
+    });
+  } else {
+    id = picked.modelId;
+  }
+  if (!id || !id.trim()) {
+    return;
+  }
+  await cfg.update("model", id.trim(), vscode.ConfigurationTarget.Workspace);
+  if (engineState) {
+    const choice = await vscode.window.showInformationMessage(
+      `Kotonia: モデルを ${id.trim()} に設定しました。反映するには新しいチャットを開始します。`,
+      "新規チャット",
+      "後で",
+    );
+    if (choice === "新規チャット") {
+      restart();
+    }
+  } else {
+    vscode.window.showInformationMessage(
+      `Kotonia: モデルを ${id.trim()} に設定しました（新規チャットで反映）。`,
     );
   }
 }
@@ -370,8 +686,8 @@ async function speak(text: string): Promise<void> {
   if (!cfg.get<boolean>("avatar.enabled", false)) {
     return;
   }
-  const avatarId = cfg.get<string>("avatar.id", "").trim();
-  if (!avatarId || !text.trim()) {
+  const resolved = resolveAvatar(cfg);
+  if (!resolved.id || !text.trim()) {
     return;
   }
   const auth = readAvatarAuth(cfg);
@@ -387,7 +703,7 @@ async function speak(text: string): Promise<void> {
   // Numeric speaker ids (AivisSpeech / VoiceVox style) must go over the wire
   // as numbers — the ditto→TTS proxy forwards `speaker` verbatim and the
   // engine expects an int for those backends.
-  const speakerStr = cfg.get<string>("avatar.speaker", "").trim();
+  const speakerStr = String(resolved.speaker ?? "").trim();
   const speaker: string | number | undefined = speakerStr
     ? /^\d+$/.test(speakerStr)
       ? Number(speakerStr)
@@ -395,8 +711,8 @@ async function speak(text: string): Promise<void> {
     : undefined;
   const body = {
     text,
-    avatar_id: avatarId,
-    tts_backend: cfg.get<string>("avatar.ttsBackend", "aivis"),
+    avatar_id: resolved.id,
+    tts_backend: resolved.ttsBackend,
     language: cfg.get<string>("avatar.language", "ja"),
     speaker,
     speed: cfg.get<number>("avatar.speed", 1.2),
@@ -581,7 +897,17 @@ function runLogin(): void {
   );
   child.on("exit", (code) => {
     if (code === 0) {
-      vscode.window.showInformationMessage("Kotonia: signed in. Press New Chat (＋) to start.");
+      authPromptActive = false;
+      refreshLoginContext();
+      // The engine reads the device token once at startup, so a session that
+      // was running with the old/expired token must be restarted to pick up
+      // the fresh one.
+      if (engineState) {
+        vscode.window.showInformationMessage("Kotonia: ログインしました。新しいトークンでセッションを再起動します。");
+        restart();
+      } else {
+        vscode.window.showInformationMessage("Kotonia: ログインしました。新規チャット（＋）で開始できます。");
+      }
     } else {
       vscode.window.showErrorMessage(
         "Kotonia: login did not complete. See the “Kotonia Agent” output channel.",
@@ -850,9 +1176,16 @@ function execFileP(cmd: string, args: string[]): Promise<void> {
 
 async function gatherEnv(): Promise<Record<string, string>> {
   const env: Record<string, string> = {};
-  const kotonia = await extContext.secrets.get(SECRET_KOTONIA);
-  if (kotonia) {
-    env.KOTONIA_API_KEY = kotonia;
+  // Device login (~/.kotonia/daemon.json) is the primary auth for hosted
+  // models. The engine PREFERS KOTONIA_API_KEY over the device token, so a
+  // leftover/stale KOTONIA_API_KEY secret would silently override a valid
+  // login and 401. Only inject the key when NOT device-logged-in.
+  const daemonJson = path.join(os.homedir(), ".kotonia", "daemon.json");
+  if (!fs.existsSync(daemonJson)) {
+    const kotonia = await extContext.secrets.get(SECRET_KOTONIA);
+    if (kotonia) {
+      env.KOTONIA_API_KEY = kotonia;
+    }
   }
   const deepseek = await extContext.secrets.get(SECRET_DEEPSEEK);
   if (deepseek) {
