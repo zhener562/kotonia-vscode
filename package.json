@@ -86,6 +86,11 @@
           "group": "navigation@9"
         },
         {
+          "command": "kotonia.help",
+          "when": "view == kotonia.sessions",
+          "group": "9_more@0"
+        },
+        {
           "command": "kotonia.showAvatar",
           "when": "view == kotonia.sessions",
           "group": "9_more@1"
@@ -168,6 +173,12 @@
         "command": "kotonia.showAvatar",
         "title": "%cmd.showAvatar.title%",
         "category": "Kotonia"
+      },
+      {
+        "command": "kotonia.help",
+        "title": "%cmd.help.title%",
+        "category": "Kotonia",
+        "icon": "$(question)"
       },
       {
         "command": "kotonia.cancel",

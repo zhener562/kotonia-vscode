@@ -67,6 +67,86 @@ const ui = {
   },
 };
 
+let helpPanel: vscode.WebviewPanel | undefined;
+
+/** Open a read-only help panel listing every toolbar button, … menu action,
+ * and key setting, with what each does. */
+function showHelp(): void {
+  if (helpPanel) {
+    helpPanel.reveal();
+    return;
+  }
+  helpPanel = vscode.window.createWebviewPanel(
+    "kotoniaHelp",
+    "Kotonia ヘルプ",
+    vscode.ViewColumn.Active,
+    { enableScripts: false, retainContextWhenHidden: true },
+  );
+  helpPanel.iconPath = vscode.Uri.joinPath(extContext.extensionUri, "media", "icon.png");
+  helpPanel.webview.html = HELP_HTML;
+  helpPanel.onDidDispose(() => {
+    helpPanel = undefined;
+  });
+}
+
+const HELP_HTML = `<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';" />
+<style>
+  body { font-family: var(--vscode-font-family); color: var(--vscode-foreground);
+    background: var(--vscode-editor-background); padding: 18px 24px; line-height: 1.7; }
+  h1 { font-size: 1.4em; border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 6px; }
+  h2 { font-size: 1.12em; margin-top: 1.6em; color: var(--vscode-foreground); }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 4px; }
+  th, td { text-align: left; vertical-align: top; padding: 6px 10px;
+    border-bottom: 1px solid var(--vscode-panel-border); }
+  th { color: var(--vscode-descriptionForeground); font-weight: 600; white-space: nowrap; }
+  td.k { white-space: nowrap; font-weight: 600; }
+  code { background: var(--vscode-textCodeBlock-background); padding: 1px 5px; border-radius: 3px; }
+  .dim { color: var(--vscode-descriptionForeground); }
+  .icon { font-family: var(--vscode-editor-font-family, monospace); }
+</style></head>
+<body>
+  <h1>🔥 Kotonia Agent — 機能ヘルプ</h1>
+  <p class="dim">左サイドバー「セッション」ビューのタイトルバー（アイコンボタン）と「…」メニューの各機能です。</p>
+
+  <h2>ツールバー（アイコンボタン・よく使う）</h2>
+  <table>
+    <tr><th>ボタン</th><th>できること</th></tr>
+    <tr><td class="k"><span class="icon">＋</span> 新規チャット</td><td>新しいセッション（エンジン）を開始して中央のチャットを開く。</td></tr>
+    <tr><td class="k"><span class="icon">⟳</span> 更新</td><td>左のセッション一覧を再読み込み。</td></tr>
+    <tr><td class="k"><span class="icon">▷</span> モデルを選択</td><td>使う LLM を切替（<code>kotonia-gemma4-26b</code> / <code>deepseek-chat</code> / <code>claude-code</code> / ローカル / カスタム）。反映は新規チャットから。</td></tr>
+    <tr><td class="k"><span class="icon">☺</span> アバターを選択</td><td>ことな / ひなた を名前で選択。<b>声＋キャラ性格（persona）</b>もまとめて切替。カスタムで任意の avatar_id も可。</td></tr>
+    <tr><td class="k"><span class="icon">⇥</span> ログイン / ログアウト</td><td>kotonia.ai にデバイスログイン（ブラウザで承認）。ログイン中は「ログアウト」表示。ホストモデルはこれだけで使える。</td></tr>
+  </table>
+
+  <h2>「…」メニュー（あまり使わない）</h2>
+  <table>
+    <tr><th>項目</th><th>できること</th></tr>
+    <tr><td class="k">ヘルプ（機能一覧）</td><td>この画面。</td></tr>
+    <tr><td class="k">アバターパネルを表示</td><td>喋るアバターの専用パネルを開く。<b>ドラッグで移動・境界で拡縮</b>、タブ右クリック →「エディターを新しいウィンドウに移動」で<b>VS Code の外に浮かせられる</b>。通常は発話時に自動で開く。</td></tr>
+    <tr><td class="k">アバターON/OFF</td><td>喋るリップシンクアバターの有効／無効。OFF でテキストのみ。</td></tr>
+    <tr><td class="k">エージェントの変更を確認</td><td><code>worktree</code> モード時、エージェントが加えた変更の git 差分を表示。</td></tr>
+    <tr><td class="k">変更をワークスペースに適用</td><td>worktree の変更を実際の作業コピーへ取り込む（確認あり）。</td></tr>
+    <tr><td class="k">DeepSeek API キーを設定</td><td><code>deepseek-*</code> モデルを使う時の鍵を保存。Kotonia モデルはログインのみでOK。</td></tr>
+  </table>
+
+  <h2>入力欄</h2>
+  <p><b>Enter</b> で送信 / <b>Shift+Enter</b> で改行（日本語変換中の Enter は確定のみで送信されません）。承認が必要なコマンドはチャット内にボタンで出ます（「remember」で同種を今セッション自動承認）。</p>
+
+  <h2>主な設定（<code>settings.json</code> / 設定UI で <code>kotonia.</code> 検索）</h2>
+  <table>
+    <tr><th>設定</th><th>意味</th></tr>
+    <tr><td class="k">kotonia.model</td><td>使用モデル。</td></tr>
+    <tr><td class="k">kotonia.avatar.character</td><td>アバター（ことな / ひなた / 任意 avatar_id）。</td></tr>
+    <tr><td class="k">kotonia.avatar.persona</td><td>選んだキャラの性格で応答するか（既定 ON）。</td></tr>
+    <tr><td class="k">kotonia.avatar.enabled</td><td>喋るアバターの ON/OFF。</td></tr>
+    <tr><td class="k">kotonia.language</td><td>既定の回答言語（<code>ja</code> など）。</td></tr>
+    <tr><td class="k">kotonia.workspaceMode</td><td><code>worktree</code>（隔離・要レビュー）か <code>in-place</code>（直接編集）。</td></tr>
+    <tr><td class="k">kotonia.approvalMode</td><td>コマンド承認の厳しさ（<code>all</code> / <code>allowlist</code> / <code>auto</code>）。</td></tr>
+  </table>
+</body></html>`;
+
 /** Open the dedicated avatar panel if it isn't already up. It lives in the
  * editor area so the user can move / resize / float it (Move Editor into New
  * Window) independently of the chat. */
@@ -100,6 +180,7 @@ export function activate(context: vscode.ExtensionContext): void {
       ensureAvatarPanel();
       avatarPanel?.reveal();
     }),
+    vscode.commands.registerCommand("kotonia.help", () => showHelp()),
     vscode.commands.registerCommand("kotonia.cancel", () => engineState?.engine.cancel()),
     vscode.commands.registerCommand("kotonia.reviewChanges", () => reviewChanges()),
     vscode.commands.registerCommand("kotonia.applyChanges", () => applyChanges()),
