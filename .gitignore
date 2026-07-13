@@ -3,3 +3,4 @@ out/
 bin/
 dist/
 *.vsix
+media/chat/

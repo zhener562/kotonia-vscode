@@ -42,18 +42,6 @@ export class ChatPanel {
   reset(): void {
     this.panel.webview.postMessage({ kind: "reset" });
   }
-  avatarBegin(): void {
-    this.panel.webview.postMessage({ kind: "avatarBegin" });
-  }
-  avatarChunk(chunkType: number, data: string): void {
-    this.panel.webview.postMessage({ kind: "avatarChunk", chunkType, data });
-  }
-  avatarEnd(): void {
-    this.panel.webview.postMessage({ kind: "avatarEnd" });
-  }
-  avatarStop(): void {
-    this.panel.webview.postMessage({ kind: "avatarStop" });
-  }
   reveal(): void {
     this.panel.reveal();
   }
