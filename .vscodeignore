@@ -3,11 +3,14 @@
 .claude/**
 docs/**
 src/**
+webview-ui/**
 node_modules/**
 dist/**
 bin/**
 tsconfig.json
+vite.config.ts
 .gitignore
 *.vsix
 **/*.map
 **/*.ts
+**/*.tsx

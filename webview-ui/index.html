@@ -1,0 +1,15 @@
+<!doctype html>
+<!-- Dev-only shell for `vite` (webview-ui). The extension does NOT use this
+     file — src/webview.ts builds its own HTML with a CSP nonce and loads the
+     built media/chat/main.js + main.css. -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kotonia Chat (dev)</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/webview-ui/src/main.tsx"></script>
+  </body>
+</html>

@@ -26,12 +26,17 @@ export function getNonce(): string {
   return out;
 }
 
-/** Build the chat webview HTML. Loads media/main.js + main.css via
- * webview-safe URIs and locks a CSP with a per-render nonce. */
+/** Build the chat webview HTML. Mounts the React app bundled into
+ * media/chat/main.js + main.css (see webview-ui/ + vite.config.ts), loaded via
+ * webview-safe URIs under a CSP with a per-render nonce. */
 export function renderChatHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
   const nonce = getNonce();
-  const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "main.js"));
-  const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "main.css"));
+  const scriptUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(extensionUri, "media", "chat", "main.js"),
+  );
+  const styleUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(extensionUri, "media", "chat", "main.css"),
+  );
   const csp = [
     `default-src 'none'`,
     `img-src ${webview.cspSource} blob:`,
@@ -50,18 +55,7 @@ export function renderChatHtml(webview: vscode.Webview, extensionUri: vscode.Uri
   <title>Kotonia Agent</title>
 </head>
 <body>
-  <div id="status" class="status">engine starting…</div>
-  <div id="avatar-wrap" class="avatar-wrap">
-    <canvas id="avatar" class="avatar"></canvas>
-  </div>
-  <div id="log" class="log"></div>
-  <div id="composer" class="composer">
-    <textarea id="input" rows="2" placeholder="Ask the agent to do something…  (Enter to send · Shift+Enter for newline)"></textarea>
-    <div class="composer-buttons">
-      <button id="send" title="Send (Enter)">Send</button>
-      <button id="cancel" class="secondary" disabled>Cancel</button>
-    </div>
-  </div>
+  <div id="root"></div>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
