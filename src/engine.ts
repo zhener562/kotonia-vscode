@@ -44,6 +44,10 @@ export class KotoniaEngine {
     const args = ["--serve", "--model", this.opts.model, "--approval", this.opts.approvalMode];
     if (this.opts.workspaceMode === "in-place") {
       args.push("--in-place");
+    } else {
+      // The extension owns review/apply/discard. Never let closing a panel or
+      // restarting the engine destroy uncommitted worktree edits.
+      args.push("--keep-worktree");
     }
     if (this.opts.resumeSessionId) {
       args.push("--resume", this.opts.resumeSessionId);
@@ -106,9 +110,11 @@ export class KotoniaEngine {
         continue;
       }
       if (msg.type === "hello" && msg.protocol_version !== PROTOCOL_VERSION) {
-        vscode.window.showWarningMessage(
-          `Kotonia: engine protocol v${msg.protocol_version} != extension v${PROTOCOL_VERSION}. Update one side.`,
+        vscode.window.showErrorMessage(
+          `Kotonia: incompatible engine protocol v${msg.protocol_version}; extension requires v${PROTOCOL_VERSION}. Update kotonia-cli.`,
         );
+        this.dispose();
+        return;
       }
       this.onMessage(msg);
     }
@@ -141,8 +147,9 @@ export class KotoniaEngine {
   dispose(): void {
     this.disposed = true;
     if (this.proc && this.proc.exitCode === null) {
-      // Closing stdin makes the serve loop exit cleanly (EOF), which lets the
-      // engine tear down its worktree. Fall back to SIGTERM if it lingers.
+      // Closing stdin makes the serve loop exit cleanly after the active turn.
+      // Give in-flight LLM/tool calls enough time to finish and flush history;
+      // worktree mode is preserved regardless.
       try {
         this.proc.stdin.end();
       } catch {
@@ -153,7 +160,7 @@ export class KotoniaEngine {
         if (proc.exitCode === null) {
           proc.kill("SIGTERM");
         }
-      }, 3000);
+      }, 30_000);
     }
   }
 }

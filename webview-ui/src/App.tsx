@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { postAction } from "./vscodeApi";
+import { getState, postAction, setState as persistState } from "./vscodeApi";
 import { engineToRow } from "./rows";
-import { esc } from "./md";
+import { esc, mdToHtml } from "./md";
 import { Approval, type ApprovalData } from "./components/Approval";
 import { Composer } from "./components/Composer";
 import type { HostMessage } from "./types";
@@ -16,14 +16,24 @@ interface Status {
   ready: boolean;
 }
 
+interface PersistedState {
+  entries: Entry[];
+  busy: boolean;
+  status: Status;
+  lastTurn: number;
+}
+
 export function App() {
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<Status>({ text: "engine starting…", ready: false });
+  const initial = useRef(getState<PersistedState>()).current;
+  const [entries, setEntries] = useState<Entry[]>(initial?.entries ?? []);
+  const [busy, setBusy] = useState(initial?.busy ?? false);
+  const [status, setStatus] = useState<Status>(
+    initial?.status ?? { text: "engine starting…", ready: false },
+  );
 
   const logRef = useRef<HTMLDivElement>(null);
-  const idRef = useRef(0);
-  const lastTurnRef = useRef(-1);
+  const idRef = useRef(Math.max(0, ...(initial?.entries ?? []).map((entry) => entry.id)));
+  const lastTurnRef = useRef(initial?.lastTurn ?? -1);
   const nextId = () => ++idRef.current;
 
   const addRow = (turnId: number, cls: string, html: string) =>
@@ -45,6 +55,26 @@ export function App() {
                 (msg.session_id ? ` · session ${msg.session_id}` : ""),
               ready: true,
             });
+          } else if (msg.type === "history_snapshot") {
+            let turnId = 0;
+            const restored: Entry[] = [];
+            for (const message of msg.messages) {
+              if (message.role === "user") {
+                turnId += 1;
+                restored.push({ id: nextId(), kind: "user", text: message.content });
+              } else {
+                restored.push({
+                  id: nextId(),
+                  kind: "row",
+                  turnId,
+                  cls: "final history-final",
+                  html: `<div class="final-answer">${mdToHtml(message.content)}</div>`,
+                });
+              }
+            }
+            lastTurnRef.current = turnId;
+            setEntries(restored);
+            setBusy(false);
           } else if (msg.type === "approval_request") {
             setEntries((es) => [
               ...es,
@@ -88,6 +118,15 @@ export function App() {
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
+  useEffect(() => {
+    persistState<PersistedState>({
+      entries,
+      busy,
+      status,
+      lastTurn: lastTurnRef.current,
+    });
+  }, [entries, busy, status]);
+
   // Keep the log pinned to the newest content, matching the old scrollToEnd().
   useLayoutEffect(() => {
     const el = logRef.current;
@@ -100,14 +139,26 @@ export function App() {
     postAction({ kind: "send", text });
   };
 
-  // Delegated click for the file:line spans injected via dangerouslySetInnerHTML.
+  // Delegated click for paths/URLs injected via dangerouslySetInnerHTML.
   const onLogClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const link = (e.target as HTMLElement).closest<HTMLElement>(".filelink");
+    const preview = (e.target as HTMLElement).closest<HTMLElement>(".resource-preview");
+    if (preview) {
+      e.preventDefault();
+      postAction({
+        kind: "previewResource",
+        target: preview.getAttribute("data-target") || "",
+      });
+      return;
+    }
+    const link = (e.target as HTMLElement).closest<HTMLElement>(".resource-link");
     if (!link) return;
+    e.preventDefault();
     postAction({
-      kind: "open",
-      file: link.getAttribute("data-file") || "",
-      line: parseInt(link.getAttribute("data-line") || "1", 10),
+      kind: "openResource",
+      target: link.getAttribute("data-target") || "",
+      line: link.hasAttribute("data-line")
+        ? parseInt(link.getAttribute("data-line") || "1", 10)
+        : undefined,
     });
   };
 

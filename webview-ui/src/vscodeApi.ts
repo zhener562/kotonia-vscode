@@ -14,3 +14,11 @@ const vscode = acquireVsCodeApi();
 export function postAction(action: PanelAction): void {
   vscode.postMessage(action);
 }
+
+export function getState<T>(): T | undefined {
+  return vscode.getState() as T | undefined;
+}
+
+export function setState<T>(state: T): void {
+  vscode.setState(state);
+}

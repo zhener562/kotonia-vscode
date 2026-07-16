@@ -5,7 +5,7 @@
 // precisely so both move together. See
 // `docs/VSCODE_EXTENSION_DESIGN_QUESTIONS.md`.
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 // ---- Outbound: engine -> extension (stdout) --------------------------------
 
@@ -20,6 +20,17 @@ export interface Hello {
   is_worktree: boolean;
   session_id: string | null;
   kotonia_api: boolean;
+}
+
+export interface TranscriptMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface HistorySnapshot {
+  type: "history_snapshot";
+  session_id: string | null;
+  messages: TranscriptMessage[];
 }
 
 // Every event below also carries `turn_id` (spliced in by the JsonSink).
@@ -54,14 +65,21 @@ export interface ApprovalRequest extends WithTurn {
   reason: string;
 }
 
-export type Outbound = Hello | ApprovalRequest | EngineEvent;
+export type Outbound = Hello | HistorySnapshot | ApprovalRequest | EngineEvent;
 
 // ---- Inbound: extension -> engine (stdin) ----------------------------------
 
 export interface EditorContext {
   active_file?: string;
+  language_id?: string;
   selection?: { start_line: number; end_line: number };
   selection_text?: string;
+  visible_files?: string[];
+  diagnostics?: Array<{
+    severity: "error" | "warning" | "information" | "hint";
+    line: number;
+    message: string;
+  }>;
 }
 
 export interface UserTurn {
