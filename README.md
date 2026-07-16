@@ -105,5 +105,5 @@ Development Host).
   Simple Browser, and local HTML preview;
 - collapsible long tool output and session-scoped remembered approvals;
 - shared CLI login/logout validation and a dedicated Eve Code coding persona;
-- optional talking avatar where one character-selection action enables the
-  display, voice, and speaking style.
+- Eve as the complete default avatar preset: bundled idle portrait, Qwen3
+  Ono_Anna voice, and Eve's speaking style, with optional character switching.
