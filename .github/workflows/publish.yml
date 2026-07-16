@@ -50,6 +50,9 @@ jobs:
 
       - name: Publish GitHub release asset (tagged version)
         if: startsWith(github.ref, 'refs/tags/')
+        # A transient GitHub Releases outage must not prevent the independent
+        # Marketplace job from publishing the already-built VSIX.
+        continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
           files: dist/vsix/*.vsix
@@ -58,6 +61,7 @@ jobs:
       # Rolling "latest" prerelease so there is always a directly downloadable
       # VSIX (Install from VSIX) without cutting a version tag.
       - name: Update rolling "latest" release
+        continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
