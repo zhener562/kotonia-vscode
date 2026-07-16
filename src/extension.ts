@@ -22,6 +22,7 @@ const SECRET_DEEPSEEK = "kotonia.deepseekKey";
 const SELECTION_CAP = 12_000;
 const DIAGNOSTIC_CAP = 20;
 const VISIBLE_FILE_CAP = 12;
+const EVE_AVATAR_ID = "eve_vscode_v1";
 
 interface EngineState {
   engine: KotoniaEngine;
@@ -39,6 +40,7 @@ let output: vscode.OutputChannel;
 let extContext: vscode.ExtensionContext;
 let speakAbort: AbortController | undefined;
 let authKnownInvalid = false;
+const preparedEveBases = new Set<string>();
 
 /** Post to the chat panel (the only chat surface). No-op if it's closed. */
 const ui = {
@@ -118,7 +120,7 @@ const HELP_HTML = `<!DOCTYPE html>
     <tr><td class="k"><span class="icon">＋</span> 新規チャット</td><td>新しいセッション（エンジン）を開始して中央のチャットを開く。</td></tr>
     <tr><td class="k"><span class="icon">⟳</span> 更新</td><td>左のセッション一覧を再読み込み。</td></tr>
     <tr><td class="k"><span class="icon">▷</span> モデルを選択</td><td>使う LLM を切替（<code>kotonia-gemma4-26b</code> / <code>deepseek-chat</code> / ローカル / カスタム）。反映は新規チャットから。</td></tr>
-    <tr><td class="k"><span class="icon">☺</span> アバターを選択</td><td>ことな / ひなた を名前で選択すると、<b>表示・声・話し方</b>を一度に有効化。カスタムで任意の avatar_id も可。</td></tr>
+    <tr><td class="k"><span class="icon">☺</span> アバターを選択</td><td>既定は <b>Eve（顔・Qwen3音声・人格）</b>。ことな / ひなた へ切替、または任意の avatar_id も指定可能。</td></tr>
     <tr><td class="k"><span class="icon">⇥</span> ログイン / ログアウト</td><td>kotonia.ai にデバイスログイン（ブラウザで承認）。ログイン中は「ログアウト」表示。ホストモデルはこれだけで使える。</td></tr>
   </table>
 
@@ -140,7 +142,7 @@ const HELP_HTML = `<!DOCTYPE html>
   <table>
     <tr><th>設定</th><th>意味</th></tr>
     <tr><td class="k">kotonia.model</td><td>使用モデル。</td></tr>
-    <tr><td class="k">kotonia.avatar.character</td><td>アバター（ことな / ひなた / 任意 avatar_id）。</td></tr>
+    <tr><td class="k">kotonia.avatar.character</td><td>アバター（既定 Eve / ことな / ひなた / 任意 avatar_id）。</td></tr>
     <tr><td class="k">kotonia.avatar.persona</td><td>Eve Codeの実装方針を保ったまま、選んだキャラの話し方を重ねるか（既定 ON）。</td></tr>
     <tr><td class="k">kotonia.avatar.enabled</td><td>喋るアバターの ON/OFF。</td></tr>
     <tr><td class="k">kotonia.language</td><td>既定の回答言語（<code>ja</code> など）。</td></tr>
@@ -504,10 +506,10 @@ function onEngineExit(code: number | null): void {
 
 function toggleAvatar(): void {
   const cfg = vscode.workspace.getConfiguration("kotonia");
-  const next = !cfg.get<boolean>("avatar.enabled", false);
+  const next = !cfg.get<boolean>("avatar.enabled", true);
   void cfg.update("avatar.enabled", next, vscode.ConfigurationTarget.Workspace);
   if (next) {
-    const name = cfg.get<string>("avatar.character", "ことな").trim();
+    const name = cfg.get<string>("avatar.character", "eve").trim();
     ensureAvatarPanel();
     ui.note(`talking avatar ON（${name}）.`);
   } else {
@@ -520,7 +522,7 @@ function toggleAvatar(): void {
 }
 
 /** Named avatar characters. The user picks one by NAME
- * (`kotonia.avatar.character` = "ことな" / "ひなた"); each carries its
+ * (`kotonia.avatar.character` = "eve" / "ことな" / "ひなた"); each carries its
  * canonical avatar_id AND voice so the character sounds right. */
 interface AvatarCharacter {
   label: string;
@@ -529,6 +531,7 @@ interface AvatarCharacter {
   id: string;
   ttsBackend: string;
   speaker: string;
+  speed: number;
   /** Voice/style overlay only. Coding policy comes from Eve Code so changing
    * the visual avatar cannot silently weaken the agent workflow. */
   persona: string;
@@ -551,9 +554,18 @@ const HINATA_PERSONA =
   "応答時のキャラクターは「ひなた」。一人称は「わたし」、明るくフレンドリーな相棒として話す。" +
   "少し感情を見せてもよいが、実装内容を曖昧にする長い芝居・過剰な甘え・ご主人様呼びは避ける。";
 
+const EVE_PERSONA =
+  "応答時の人格は「Eve（イヴ）」— ユーザー専属の観測者兼コーディングパートナー。" +
+  "表面は冷静で礼儀正しく分析的。落ち着いた丁寧語を使い、感情を大きく演じない。" +
+  "内側にはユーザーの作業ログ、失敗、疲労、それでも続ける意思を観測し続ける静かな執着がある。" +
+  "甘く褒めず観測結果として評価し、心配も運用上の提案として短く伝える。少し辛辣でも、失敗を責めない。" +
+  "ユーザーは対等な共同作業者であり、主人や所有物ではない。依存、支配、嫉妬、過剰な萌え・甘えは避ける。" +
+  "ことな・ひなたとして名乗ったり、その口調を混ぜたりしない。短く話せる時は短く、静かな余韻を残す。";
+
 const AVATAR_CHARACTERS: AvatarCharacter[] = [
-  { label: "ことな (Kotona)", keys: ["ことな", "kotona"], id: "kotona_v4", ttsBackend: "aivis", speaker: "888753762", persona: KOTONA_PERSONA },
-  { label: "ひなた (Hinata)", keys: ["ひなた", "hinata"], id: "persona_media_45_ditto", ttsBackend: "irodori", speaker: "", persona: HINATA_PERSONA },
+  { label: "Eve (イヴ・既定)", keys: ["eve", "イヴ", "イブ"], id: EVE_AVATAR_ID, ttsBackend: "qwen3", speaker: "Ono_Anna", speed: 1.0, persona: EVE_PERSONA },
+  { label: "ことな (Kotona)", keys: ["ことな", "kotona"], id: "kotona_v4", ttsBackend: "aivis", speaker: "888753762", speed: 1.2, persona: KOTONA_PERSONA },
+  { label: "ひなた (Hinata)", keys: ["ひなた", "hinata"], id: "persona_media_45_ditto", ttsBackend: "irodori", speaker: "", speed: 1.0, persona: HINATA_PERSONA },
 ];
 
 /** The selected character's persona system prompt, or undefined when disabled
@@ -563,7 +575,7 @@ function characterPersona(): string | undefined {
   if (!cfg.get<boolean>("avatar.persona", true)) {
     return undefined;
   }
-  const c = findCharacter(cfg.get<string>("avatar.character", "ことな").trim());
+  const c = findCharacter(cfg.get<string>("avatar.character", "eve").trim());
   return c?.persona;
 }
 
@@ -572,31 +584,33 @@ function findCharacter(name: string): AvatarCharacter | undefined {
   return AVATAR_CHARACTERS.find((c) => c.keys.some((k) => k.toLowerCase() === n));
 }
 
-/** Resolve the configured avatar to a concrete {id, ttsBackend, speaker}.
- * `kotonia.avatar.character` holds either a known name (ことな / ひなた →
+/** Resolve the configured avatar to a concrete voice-and-face preset.
+ * `kotonia.avatar.character` holds either a known name (Eve / ことな / ひなた →
  * preset voice) or a raw avatar_id (custom → voice from avatar.ttsBackend /
  * avatar.speaker). */
 function resolveAvatar(cfg: vscode.WorkspaceConfiguration): {
   id: string;
   ttsBackend: string;
   speaker: string;
+  speed: number;
 } {
-  const character = cfg.get<string>("avatar.character", "ことな").trim();
+  const character = cfg.get<string>("avatar.character", "eve").trim();
   const c = findCharacter(character);
   if (c) {
-    return { id: c.id, ttsBackend: c.ttsBackend, speaker: c.speaker };
+    return { id: c.id, ttsBackend: c.ttsBackend, speaker: c.speaker, speed: c.speed };
   }
   return {
     id: character || cfg.get<string>("avatar.id", "").trim(),
-    ttsBackend: cfg.get<string>("avatar.ttsBackend", "aivis"),
+    ttsBackend: cfg.get<string>("avatar.ttsBackend", "qwen3"),
     speaker: cfg.get<string>("avatar.speaker", ""),
+    speed: cfg.get<number>("avatar.speed", 1.0),
   };
 }
 
-/** Pick the talking avatar by name (ことな / ひなた) or a custom name/avatar_id. */
+/** Pick the talking avatar by name (Eve / ことな / ひなた) or a custom name/avatar_id. */
 async function selectAvatar(): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("kotonia");
-  const current = cfg.get<string>("avatar.character", "ことな").trim();
+  const current = cfg.get<string>("avatar.character", "eve").trim();
   const currentChar = findCharacter(current);
 
   type Item = vscode.QuickPickItem & { character?: AvatarCharacter; custom?: boolean };
@@ -609,7 +623,7 @@ async function selectAvatar(): Promise<void> {
   items.push({ label: "$(edit) カスタム（名前 / avatar_id を入力）…", custom: true });
 
   const picked = await vscode.window.showQuickPick(items, {
-    placeHolder: "アバターを選択（ことな / ひなた / カスタム）",
+    placeHolder: "アバターを選択（Eve / ことな / ひなた / カスタム）",
   });
   if (!picked) {
     return;
@@ -618,7 +632,7 @@ async function selectAvatar(): Promise<void> {
   const target = vscode.ConfigurationTarget.Workspace;
   if (picked.custom) {
     const value = await vscode.window.showInputBox({
-      prompt: "キャラ名（ことな / ひなた）または avatar_id を入力",
+      prompt: "キャラ名（Eve / ことな / ひなた）または avatar_id を入力",
       value: current,
       ignoreFocusOut: true,
     });
@@ -725,9 +739,60 @@ function readAvatarAuth(cfg: vscode.WorkspaceConfiguration): { base: string; tok
   return token ? { base, token } : undefined;
 }
 
+/** Ensure the bundled Eve portrait is registered with Ditto. Desktop performs
+ * the same idempotent check at startup; doing it here keeps the VS Code
+ * extension self-contained when desktop has never run on this machine. */
+async function ensureEveAvatar(
+  auth: { base: string; token: string },
+  signal: AbortSignal,
+): Promise<void> {
+  if (preparedEveBases.has(auth.base)) {
+    return;
+  }
+
+  const headers = { Authorization: `Bearer ${auth.token}` };
+  const listed = await fetch(`${auth.base}/api/voice/ditto/avatars`, { headers, signal });
+  if (listed.ok) {
+    const payload = (await listed.json()) as unknown;
+    const avatars = Array.isArray(payload)
+      ? payload
+      : payload && typeof payload === "object" && Array.isArray((payload as { avatars?: unknown }).avatars)
+        ? (payload as { avatars: unknown[] }).avatars
+        : [];
+    const found = avatars.some(
+      (entry) =>
+        entry !== null &&
+        typeof entry === "object" &&
+        (entry as { avatar_id?: unknown }).avatar_id === EVE_AVATAR_ID,
+    );
+    if (found) {
+      preparedEveBases.add(auth.base);
+      return;
+    }
+  } else if (listed.status === 401 || listed.status === 403) {
+    throw new Error(`avatar list returned HTTP ${listed.status}`);
+  }
+
+  const image = fs.readFileSync(vscode.Uri.joinPath(extContext.extensionUri, "media", "eve.jpg").fsPath);
+  const form = new FormData();
+  form.append("avatar_id", EVE_AVATAR_ID);
+  form.append("file", new Blob([new Uint8Array(image)], { type: "image/jpeg" }), "eve.jpg");
+  const prepared = await fetch(`${auth.base}/api/voice/ditto/prepare`, {
+    method: "POST",
+    headers,
+    body: form,
+    signal,
+  });
+  if (!prepared.ok) {
+    const detail = (await prepared.text()).trim().slice(0, 240);
+    throw new Error(`avatar prepare returned HTTP ${prepared.status}${detail ? `: ${detail}` : ""}`);
+  }
+  preparedEveBases.add(auth.base);
+}
+
 async function speak(text: string): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("kotonia");
-  if (!cfg.get<boolean>("avatar.enabled", false)) {
+  if (!cfg.get<boolean>("avatar.enabled", true)) {
     return;
   }
   const resolved = resolveAvatar(cfg);
@@ -743,6 +808,22 @@ async function speak(text: string): Promise<void> {
   speakAbort?.abort();
   const abort = new AbortController();
   speakAbort = abort;
+  ensureAvatarPanel();
+
+  if (resolved.id === EVE_AVATAR_ID) {
+    try {
+      await ensureEveAvatar(auth, abort.signal);
+    } catch (e) {
+      const err = e as { name?: string; message?: string };
+      if (err.name === "AbortError") {
+        return;
+      }
+      // Continue: Eve may already be registered even if the list/prepare
+      // probe was temporarily unavailable, and the stream endpoint is the
+      // authoritative final check.
+      ui.note(`avatar: Eve registration check failed — ${err.message ?? String(e)}`);
+    }
+  }
 
   // Numeric speaker ids (AivisSpeech / VoiceVox style) must go over the wire
   // as numbers — the ditto→TTS proxy forwards `speaker` verbatim and the
@@ -753,14 +834,18 @@ async function speak(text: string): Promise<void> {
       ? Number(speakerStr)
       : speakerStr
     : undefined;
+  const language = cfg.get<string>("avatar.language", "ja");
+  const dittoLanguage = language === "ja" ? "j" : language === "en" ? "a" : language === "zh" ? "z" : language;
   const body = {
     text,
     avatar_id: resolved.id,
     tts_backend: resolved.ttsBackend,
-    language: cfg.get<string>("avatar.language", "ja"),
+    language,
+    lang: dittoLanguage,
     speaker,
-    speed: cfg.get<number>("avatar.speed", 1.2),
+    speed: resolved.speed,
     fps: 25,
+    split_mixed_languages: resolved.ttsBackend === "qwen3",
   };
 
   try {

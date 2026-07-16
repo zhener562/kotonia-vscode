@@ -5,6 +5,7 @@
 // sentence starts with its first frame). Fed by postMessage from avatarPanel.ts.
 (function () {
   const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById("avatar"));
+  const still = /** @type {HTMLImageElement} */ (document.getElementById("avatar-still"));
   const placeholder = document.getElementById("placeholder");
   const ctx = canvas.getContext("2d");
 
@@ -36,6 +37,15 @@
   if (unmute) unmute.addEventListener("click", unlockAudio);
   window.addEventListener("pointerdown", unlockAudio);
   window.addEventListener("keydown", unlockAudio);
+  if (still) {
+    still.addEventListener("load", () => {
+      if (placeholder) placeholder.style.display = "none";
+    });
+    still.addEventListener("error", () => {
+      still.style.display = "none";
+      if (placeholder) placeholder.style.display = "block";
+    });
+  }
 
   function b64ToBytes(b64) {
     const bin = atob(b64);
@@ -71,7 +81,14 @@
 
   function showCanvas() {
     if (placeholder) placeholder.style.display = "none";
+    if (still) still.style.display = "none";
     canvas.style.display = "block";
+  }
+
+  function showStill() {
+    canvas.style.display = "none";
+    if (still) still.style.display = "block";
+    if (placeholder) placeholder.style.display = "none";
   }
 
   function renderFrames() {
@@ -122,7 +139,8 @@
     waitingFirstFrame = false;
     ensureAudio();
     nextStartTime = audioCtx.currentTime;
-    showCanvas();
+    // Keep Eve's bundled portrait visible until the first generated frame is
+    // decoded. Slow TTS/Ditto startup should never turn the panel blank.
   }
 
   function chunk(type, b64) {
@@ -152,6 +170,7 @@
     rendering = false;
     pendingAudio = [];
     waitingFirstFrame = false;
+    showStill();
   }
 
   window.addEventListener("message", (event) => {

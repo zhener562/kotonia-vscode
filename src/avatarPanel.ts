@@ -11,7 +11,7 @@ export class AvatarPanel {
   constructor(extensionUri: vscode.Uri, onDispose: () => void) {
     this.panel = vscode.window.createWebviewPanel(
       "kotoniaAvatar",
-      "Kotonia アバター",
+      "Eve · Kotonia",
       { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
       {
         enableScripts: true,
@@ -46,6 +46,7 @@ export class AvatarPanel {
   private html(extensionUri: vscode.Uri, webview: vscode.Webview): string {
     const nonce = getNonce();
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "avatar.js"));
+    const stillUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "eve.jpg"));
     const csp = [
       "default-src 'none'",
       `img-src ${webview.cspSource} blob:`,
@@ -61,12 +62,19 @@ export class AvatarPanel {
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <style>
     html, body { margin: 0; height: 100%; background: var(--vscode-editor-background); overflow: hidden; }
+    #stage { position: relative; width: 100%; height: 100vh; }
     #placeholder {
+      display: none; position: absolute; inset: 0;
       color: var(--vscode-descriptionForeground);
       font-family: var(--vscode-font-family);
       font-size: 0.85em; line-height: 1.6; text-align: center; padding: 2em 1.5em;
+      box-sizing: border-box;
     }
-    #avatar { display: none; width: 100%; height: 100vh; object-fit: contain; }
+    #avatar-still, #avatar {
+      position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+    }
+    #avatar-still { display: block; }
+    #avatar { display: none; }
     #unmute {
       display: none; position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
       z-index: 10; cursor: pointer; user-select: none;
@@ -78,8 +86,11 @@ export class AvatarPanel {
   </style>
 </head>
 <body>
-  <div id="placeholder">アバター待機中… 発話すると表示されます。<br />このパネルはドラッグで移動・リサイズでき、タブ右クリック →「エディターを新しいウィンドウに移動」で VS Code の外に浮かせられます。</div>
-  <canvas id="avatar"></canvas>
+  <div id="stage">
+    <div id="placeholder">Eveの静止画を読み込めませんでした。</div>
+    <img id="avatar-still" src="${stillUri}" alt="Eve" />
+    <canvas id="avatar"></canvas>
+  </div>
   <div id="unmute">🔊 クリックで音声を有効化</div>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>

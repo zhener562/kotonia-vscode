@@ -2,7 +2,7 @@
   "name": "kotonia-agent",
   "displayName": "Kotonia Agent",
   "description": "%extension.description%",
-  "version": "0.0.26",
+  "version": "0.0.27",
   "publisher": "shinjishimizu",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -253,22 +253,22 @@
         },
         "kotonia.avatar.enabled": {
           "type": "boolean",
-          "default": false,
-          "markdownDescription": "Show a talking lip-sync avatar (Ditto) that speaks each final answer, in its own movable/resizable panel. Streams from kotonia.ai `/api/voice/ditto/tts/stream/avatar` using your device login; needs the Ditto/TTS servers running."
+          "default": true,
+          "markdownDescription": "Show Eve in a movable/resizable avatar panel and animate her with Ditto for each final answer. The bundled still portrait is visible immediately, even before the first response or when Ditto/TTS is unavailable."
         },
         "kotonia.avatar.character": {
           "type": "string",
-          "default": "ことな",
-          "markdownDescription": "Talking avatar **by name**. `ことな` (Kotona, AivisSpeech voice) or `ひなた` (Hinata, Irodori voice) resolve to the right avatar + voice automatically. Any other value is treated as a raw `avatar_id` (voice from `kotonia.avatar.ttsBackend` / `.speaker`). Use **Kotonia: アバターを選択** to pick."
+          "default": "eve",
+          "markdownDescription": "Talking avatar **by name**. `eve` is the product default and resolves to Eve's face, Qwen3 voice, and speaking style as one preset. `ことな` and `ひなた` remain optional presets. Any other value is treated as a raw `avatar_id`."
         },
         "kotonia.avatar.persona": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Add the selected character's speaking style (ことな / ひなた) to the dedicated Eve Code coding persona. This changes tone only; coding/tool policy remains stable. Applied to the engine system prompt for the whole session."
+          "markdownDescription": "Add the selected character's speaking style to the dedicated Eve Code coding persona. Eve is the default. This changes identity and tone only; coding/tool policy remains stable. Applied to the engine system prompt for the whole session."
         },
         "kotonia.avatar.id": {
           "type": "string",
-          "default": "kotona_v4",
+          "default": "eve_vscode_v1",
           "markdownDescription": "Advanced: raw Ditto `avatar_id` used only when `kotonia.avatar.character` is not a known name. Normally set the character by name instead."
         },
         "kotonia.avatar.ttsBackend": {
@@ -279,18 +279,18 @@
             "voicevox",
             "aivis"
           ],
-          "default": "aivis",
-          "description": "TTS backend the avatar voice uses. The Kotona mascot uses AivisSpeech."
+          "default": "qwen3",
+          "description": "Advanced custom-avatar TTS backend. Named presets ignore this value; Eve uses Qwen3-TTS."
         },
         "kotonia.avatar.speaker": {
           "type": "string",
-          "default": "888753762",
-          "description": "Speaker/voice id passed to the TTS backend (backend-specific). Numeric ids (e.g. AivisSpeech まお-あまあま = 888753762) are sent as numbers. Empty = backend default."
+          "default": "Ono_Anna",
+          "description": "Advanced custom-avatar speaker id. Named presets ignore this value; Eve uses the Qwen3-TTS Ono_Anna voice."
         },
         "kotonia.avatar.speed": {
           "type": "number",
-          "default": 1.2,
-          "description": "Speech speed for the avatar voice (1.0 = normal)."
+          "default": 1.0,
+          "description": "Advanced custom-avatar speech speed. Named presets use their canonical speed; Eve uses 1.0."
         },
         "kotonia.avatar.language": {
           "type": "string",
