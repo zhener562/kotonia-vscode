@@ -71,8 +71,9 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionItem>
   }
 }
 
-/** Peek a transcript for a friendly label (first real user message, minus the
- * injected language hint) + started_at + workspace. Best-effort. */
+/** Peek a transcript for a friendly label + started_at + workspace.
+ * Protocol v2 writes explicit UI bubbles; older logs are cleaned up
+ * best-effort without assuming the first paragraph is always a prompt prefix. */
 function readSessionMeta(file: string): {
   firstUser?: string;
   when?: string;
@@ -107,11 +108,13 @@ function readSessionMeta(file: string): {
         const d = new Date(o.started_at);
         out.when = isNaN(d.getTime()) ? o.started_at : d.toLocaleString();
       }
-    } else if (o.kind === "message" && o.role === "user" && typeof o.content === "string") {
-      // Strip the leading one-line language instruction we inject (it's
-      // separated from the real text by a blank line).
-      const parts = o.content.split("\n\n");
-      const text = (parts.length > 1 ? parts.slice(1).join(" ") : o.content).trim();
+    } else if (
+      (o.kind === "ui_message" || o.kind === "message") &&
+      o.role === "user" &&
+      typeof o.content === "string"
+    ) {
+      const text =
+        o.kind === "ui_message" ? o.content.trim() : cleanLegacyUserMessage(o.content);
       if (text) {
         out.firstUser = text.slice(0, 72).replace(/\s+/g, " ");
         break;
@@ -119,4 +122,36 @@ function readSessionMeta(file: string): {
     }
   }
   return out;
+}
+
+function cleanLegacyUserMessage(content: string): string {
+  let text = content.trim();
+  const contextMarker = "\n\n<!-- KOTONIA_EDITOR_CONTEXT_START -->";
+  const contextAt = text.indexOf(contextMarker);
+  if (contextAt >= 0) {
+    text = text.slice(0, contextAt).trim();
+  }
+  const ja =
+    "デフォルトでは日本語で回答してください。ユーザーが他の言語で書いた場合は、その言語で回答してください。";
+  const jaAt = text.lastIndexOf(ja);
+  if (jaAt >= 0) {
+    return text.slice(jaAt + ja.length).trim();
+  }
+  const replyAt = text.lastIndexOf('Reply in "');
+  const replyEnd =
+    "If the user writes in another language, reply in that language instead.";
+  if (replyAt >= 0) {
+    const endAt = text.indexOf(replyEnd, replyAt);
+    if (endAt >= 0) {
+      return text.slice(endAt + replyEnd.length).trim();
+    }
+  }
+  if (
+    text.startsWith("[tool ") ||
+    text.startsWith("[exit ") ||
+    text.startsWith("Operator DENIED")
+  ) {
+    return "";
+  }
+  return text;
 }

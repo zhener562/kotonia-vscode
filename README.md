@@ -33,14 +33,15 @@ VS Code (extension host)                     kotonia-cli --serve (child)
 │ extension.ts  (lifecycle)  │ ── stdin ───▶  │ stdin reader → turn/appr │
 │ engine.ts     (spawn+JSONL)│ ◀─ stdout ───  │ JsonSink (events)        │
 │ panel.ts      (webview)    │                │ JsonApproval             │
-│ media/main.js (render UI)  │                │ agent loop (untouched)   │
+│ React webview (render UI)  │                │ agent loop               │
 └───────────────────────────┘                └──────────────────────────┘
 ```
 
 Protocol wire types live in [`src/protocol.ts`](https://github.com/zhener562/kotonia-vscode/blob/main/src/protocol.ts),
-mirroring the Rust side (`serve.rs` + the `Event` enum) in the
-[`kotonia-cli`](https://github.com/zhener562/kotonia-cli) monorepo, which keeps
-both in lockstep.
+mirroring the Rust side (`serve.rs` + the `Event` enum) in the separate
+[`kotonia-cli`](https://github.com/zhener562/kotonia-cli) repository. Protocol
+v2 adds history snapshots and typed editor context; incompatible engine
+versions are rejected instead of partially working.
 
 ### Relationship to kotonia-desktop
 
@@ -74,12 +75,12 @@ The extension host — and therefore the spawned engine — runs on that remote.
 
 1. Build the engine on the target host: `cargo build` in the repo root →
    `target/debug/kotonia-cli`.
-2. `cd vscode-extension && npm install && npm run compile`.
+2. In this repository, run `npm ci && npm run compile`.
 3. Point `kotonia.enginePath` at the binary (e.g.
    `${workspaceFolder}/target/debug/kotonia-cli`, or leave `kotonia-cli` if on PATH).
-4. For hosted models, run **Kotonia: Set Kotonia API Key** (stored in
-   VS Code SecretStorage, injected as `KOTONIA_API_KEY` into the engine).
-5. **Kotonia: Open Agent** — the panel starts the engine and shows the handshake.
+4. For hosted models, run **Kotonia: Login**. The shared
+   `~/.kotonia/daemon.json` credential is also used by CLI and desktop.
+5. **Kotonia: New Chat** — the panel starts the engine and shows the handshake.
 
 Dev-run the extension: open this folder in VS Code and press **F5** (Extension
 Development Host).
@@ -91,15 +92,18 @@ Development Host).
 | `kotonia.enginePath` | `kotonia-cli` | Engine binary (supports `${workspaceFolder}`). |
 | `kotonia.model` | `kotonia-gemma4-26b` | Hosted (GPU-free) default. |
 | `kotonia.approvalMode` | `allowlist` | `all` / `allowlist` / `auto`. |
-| `kotonia.workspaceMode` | `worktree` | `worktree` (isolated) or `in-place`. |
+| `kotonia.workspaceMode` | `in-place` | `in-place` (live editor changes) or preserved isolated `worktree`. |
 | `kotonia.extraArgs` | `[]` | Extra engine CLI args. |
 
-## Status (Phase 2)
+## Current capabilities
 
-Done: engine spawn + env injection, JSONL parsing, event rendering, inline
-approval UI, cancel, editor-selection context in `user_turn`, protocol-version
-check, crash → restart.
-
-Not yet (Phase 3): worktree diff view + Merge button, `file:line` jump, session
-list / resume UI, token streaming. The `remember` approval flag is sent but
-session-scoped auto-approve memory is not yet applied on the extension side.
+- session list/resume with clean user/assistant history restoration;
+- active file, selection, visible-file, and diagnostic context sent to CLI;
+- in-place coding by default, or preserved/re-attached worktrees with
+  diff review and apply actions;
+- clickable Unicode/Windows paths, `file:line` jumps, URLs in VS Code's
+  Simple Browser, and local HTML preview;
+- collapsible long tool output and session-scoped remembered approvals;
+- shared CLI login/logout validation and a dedicated Eve Code coding persona;
+- optional talking avatar where one character-selection action enables the
+  display, voice, and speaking style.

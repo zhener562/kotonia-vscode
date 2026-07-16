@@ -14,7 +14,8 @@ export type PanelAction =
       command: string;
     }
   | { kind: "cancel" }
-  | { kind: "open"; file: string; line: number }
+  | { kind: "openResource"; target: string; line?: number }
+  | { kind: "previewResource"; target: string }
   | { kind: "ready" };
 
 export function getNonce(): string {

@@ -2,7 +2,7 @@
 // ported from renderEngine() in the old media/main.js. Returns null for events
 // handled specially by App (hello / done / approval_request).
 
-import { esc, mdToHtml, linkifyFileRefs } from "./md";
+import { esc, mdToHtml, linkifyPlainText } from "./md";
 import type { EngineMessage } from "./types";
 
 export interface Row {
@@ -19,7 +19,7 @@ export function engineToRow(msg: EngineMessage): Row | null {
     case "text":
       return { cls: "assistant-text", html: `<div class="assistant-answer">${mdToHtml(msg.text)}</div>` };
     case "bash":
-      return { cls: "bash", html: `<span class="prompt">$</span> <code>${linkifyFileRefs(esc(msg.command))}</code>` };
+      return { cls: "bash", html: `<span class="prompt">$</span> <code>${linkifyPlainText(msg.command)}</code>` };
     case "bash_skipped":
       return {
         cls: "skipped",
@@ -32,9 +32,20 @@ export function engineToRow(msg: EngineMessage): Row | null {
       if (r.truncated) flags.push(`<span class="badge warn">truncated</span>`);
       const codeBadge = `<span class="badge ${r.exit_code === 0 ? "ok" : "err"}">exit ${r.exit_code}</span>`;
       const body = (r.combined || "").trim();
-      const long = body.split("\n").length > 20;
-      const pre = `<pre class="${long ? "collapsible" : ""}">${linkifyFileRefs(esc(body))}</pre>`;
-      return { cls: "obs", html: `${codeBadge} ${flags.join(" ")}${body ? pre : ""}` };
+      const lines = body ? body.split("\n").length : 0;
+      if (!body) {
+        return { cls: "obs", html: `${codeBadge} ${flags.join(" ")}` };
+      }
+      const output = `<pre>${linkifyPlainText(body)}</pre>`;
+      if (lines > 20) {
+        return {
+          cls: "obs",
+          html:
+            `<details class="output-details"><summary>${codeBadge} ${flags.join(" ")}` +
+            `<span class="dim">${lines} lines — click to expand</span></summary>${output}</details>`,
+        };
+      }
+      return { cls: "obs", html: `${codeBadge} ${flags.join(" ")}${output}` };
     }
     case "inspect_image": {
       const ok = !msg.error;
@@ -44,7 +55,7 @@ export function engineToRow(msg: EngineMessage): Row | null {
         : `${esc(msg.path || "(no path)")} · ${esc(msg.error || "unknown error")}`;
       return {
         cls: "inspect-image",
-        html: `<span class="badge ${ok ? "ok" : "err"}">${title}</span> <span class="dim">${detail}</span>`,
+        html: `<span class="badge ${ok ? "ok" : "err"}">${title}</span> <span class="dim">${linkifyPlainText(detail)}</span>`,
       };
     }
     case "final":

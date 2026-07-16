@@ -24,6 +24,11 @@ export type EngineMessage =
       is_worktree: boolean;
       session_id: string | null;
     }
+  | {
+      type: "history_snapshot";
+      session_id: string | null;
+      messages: Array<{ role: "user" | "assistant"; content: string }>;
+    }
   | ({ type: "iteration_start"; iteration: number; max: number } & WithTurn)
   | ({ type: "llm_thinking" } & WithTurn)
   | ({ type: "text"; text: string } & WithTurn)
@@ -49,5 +54,6 @@ export type PanelAction =
   | { kind: "send"; text: string }
   | { kind: "approval"; approvalId: number; approve: boolean; remember: boolean; command: string }
   | { kind: "cancel" }
-  | { kind: "open"; file: string; line: number }
+  | { kind: "openResource"; target: string; line?: number }
+  | { kind: "previewResource"; target: string }
   | { kind: "ready" };

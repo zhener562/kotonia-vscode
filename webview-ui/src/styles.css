@@ -102,11 +102,6 @@ pre {
   margin: 4px 0 0 0;
   white-space: pre-wrap;
 }
-pre.collapsible {
-  max-height: 220px;
-  overflow-y: auto;
-}
-
 .assistant-answer,
 .final-answer {
   background: var(--surface);
@@ -144,18 +139,41 @@ pre.collapsible {
   margin: 4px 0;
   padding-left: 20px;
 }
-.final-answer a {
+.final-answer a,
+.assistant-answer a {
   color: var(--vscode-textLink-foreground);
 }
 
-.filelink {
+.resource-link {
   color: var(--vscode-textLink-foreground);
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.filelink:hover {
+.resource-link:hover {
   color: var(--vscode-textLink-activeForeground);
+}
+.resource-preview {
+  min-height: 20px;
+  padding: 0 6px;
+  font-size: 0.78em;
+  color: var(--vscode-button-secondaryForeground);
+  background: var(--vscode-button-secondaryBackground);
+  vertical-align: baseline;
+}
+
+.output-details {
+  margin-top: 4px;
+}
+.output-details summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+}
+.output-details[open] summary {
+  margin-bottom: 4px;
 }
 
 .row.note {
