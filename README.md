@@ -66,7 +66,7 @@ Linux. The Windows dev machine can't build native Rust (Smart App Control). So
 run VS Code **connected to Linux**:
 
 - **Remote-SSH** to the GPU box (production-like: local models reachable), or
-- **Remote-WSL** locally (use a hosted model: `kotonia-gemma4-26b` + API key).
+- **Remote-WSL** locally (use a hosted model: `kotonia-llm-basic` + API key).
 
 The extension host — and therefore the spawned engine — runs on that remote.
 `kotonia.enginePath` resolves there.
@@ -90,7 +90,7 @@ Development Host).
 | Setting | Default | Notes |
 |---|---|---|
 | `kotonia.enginePath` | `kotonia-cli` | Engine binary (supports `${workspaceFolder}`). |
-| `kotonia.model` | `kotonia-gemma4-26b` | Hosted (GPU-free) default. |
+| `kotonia.model` | `kotonia-llm-basic` | Hosted (GPU-free) default. |
 | `kotonia.approvalMode` | `allowlist` | `all` / `allowlist` / `auto`. |
 | `kotonia.workspaceMode` | `in-place` | `in-place` (live editor changes) or preserved isolated `worktree`. |
 | `kotonia.extraArgs` | `[]` | Extra engine CLI args. |

@@ -119,7 +119,7 @@ const HELP_HTML = `<!DOCTYPE html>
     <tr><th>ボタン</th><th>できること</th></tr>
     <tr><td class="k"><span class="icon">＋</span> 新規チャット</td><td>新しいセッション（エンジン）を開始して中央のチャットを開く。</td></tr>
     <tr><td class="k"><span class="icon">⟳</span> 更新</td><td>左のセッション一覧を再読み込み。</td></tr>
-    <tr><td class="k"><span class="icon">▷</span> モデルを選択</td><td>使う LLM を切替（<code>kotonia-gemma4-26b</code> / <code>deepseek-chat</code> / ローカル / カスタム）。反映は新規チャットから。</td></tr>
+    <tr><td class="k"><span class="icon">▷</span> モデルを選択</td><td>使う LLM を切替（<code>kotonia-llm-basic</code> / <code>deepseek-chat</code> / ローカル / カスタム）。反映は新規チャットから。</td></tr>
     <tr><td class="k"><span class="icon">☺</span> アバターを選択</td><td>既定は <b>Eve（顔・Qwen3音声・人格）</b>。ことな / ひなた へ切替、または任意の avatar_id も指定可能。</td></tr>
     <tr><td class="k"><span class="icon">⇥</span> ログイン / ログアウト</td><td>kotonia.ai にデバイスログイン（ブラウザで承認）。ログイン中は「ログアウト」表示。ホストモデルはこれだけで使える。</td></tr>
   </table>
@@ -353,7 +353,7 @@ function startEngine(resumeSessionId?: string): void {
     return;
   }
   const cfg = vscode.workspace.getConfiguration("kotonia");
-  const model = cfg.get<string>("model", "kotonia-gemma4-26b");
+  const model = cfg.get<string>("model", "kotonia-llm-basic");
   if (model === "claude-code") {
     ui.note(
       "Claude Code is not available through the current JSON engine protocol. Select a ReAct model; desktop/CLI can still use Claude Code directly.",
@@ -660,9 +660,9 @@ async function selectAvatar(): Promise<void> {
 /** Curated model list — the same range kotonia-cli's provider registry (and
  * kotonia-desktop) resolves. Custom entry covers ~/.kotonia/providers.json. */
 const MODELS: { label: string; id: string; detail: string }[] = [
-  { label: "Kotonia Gemma4 26B（hosted・既定）", id: "kotonia-gemma4-26b", detail: "kotonia.ai /api/v1・device_token" },
-  { label: "Kotonia ThinkCap 27B（hosted・reasoning）", id: "kotonia-thinkcap-27b", detail: "kotonia.ai /api/v1・device_token" },
-  { label: "Kotonia ThinkCap 27B :nothink", id: "kotonia-thinkcap-27b:nothink", detail: "reasoning無効・低遅延" },
+  { label: "Kotonia LLM Basic（hosted・無料・既定）", id: "kotonia-llm-basic", detail: "kotonia.ai /api/v1・無料ローカル・device_token" },
+  { label: "Kotonia LLM Basic :think（reasoning）", id: "kotonia-llm-basic:think", detail: "reasoningパス有効" },
+  { label: "Kotonia LLM Standard（hosted・従量）", id: "kotonia-llm-standard", detail: "クラウド級・プリペイド従量課金" },
   { label: "DeepSeek Chat（API）", id: "deepseek-chat", detail: "要 DEEPSEEK_API_KEY" },
   { label: "DeepSeek Reasoner（API）", id: "deepseek-reasoner", detail: "推論・要 DEEPSEEK_API_KEY" },
   { label: "DeepSeek Reasoner :thinking", id: "deepseek-reasoner:thinking", detail: "推論モード" },
@@ -672,7 +672,7 @@ const MODELS: { label: string; id: string; detail: string }[] = [
  * session is offered a restart to apply. */
 async function selectModel(): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("kotonia");
-  const current = cfg.get<string>("model", "kotonia-gemma4-26b").trim();
+  const current = cfg.get<string>("model", "kotonia-llm-basic").trim();
 
   type Item = vscode.QuickPickItem & { modelId?: string; custom?: boolean };
   const items: Item[] = MODELS.map((m) => ({
@@ -693,7 +693,7 @@ async function selectModel(): Promise<void> {
   let id: string | undefined;
   if (picked.custom) {
     id = await vscode.window.showInputBox({
-      prompt: "model id を入力（例: kotonia-gemma4-26b / deepseek-chat / providers.json のモデル）",
+      prompt: "model id を入力（例: kotonia-llm-basic / deepseek-chat / providers.json のモデル）",
       value: current,
       ignoreFocusOut: true,
     });
