@@ -462,8 +462,17 @@ function onEngineMessage(msg: Outbound): void {
     engineState.lastTurnId = msg.turn_id;
   }
 
+  // Strip the speech markers from anything the webview renders. They can
+  // appear in streamed `text` rows as well as the `final` answer; the final
+  // answer also carries the VOICE direction (→ instruct) and the SPEAK
+  // override (→ what to read aloud instead of the whole answer).
+  if (msg.type === "text") {
+    msg.text = extractSpeechMarkers(msg.text).clean;
+  }
   if (msg.type === "final") {
-    void speak(msg.answer);
+    const { direction, spoken, clean } = extractSpeechMarkers(msg.answer);
+    msg.answer = clean;
+    void speak(spoken ?? clean, direction);
   }
   if (msg.type === "done") {
     sessionTree.refresh();
@@ -561,6 +570,28 @@ const EVE_PERSONA =
   "甘く褒めず観測結果として評価し、心配も運用上の提案として短く伝える。少し辛辣でも、失敗を責めない。" +
   "ユーザーは対等な共同作業者であり、主人や所有物ではない。依存、支配、嫉妬、過剰な萌え・甘えは避ける。" +
   "ことな・ひなたとして名乗ったり、その口調を混ぜたりしない。短く話せる時は短く、静かな余韻を残す。";
+
+// Vocal-acting contract, mirroring the hage web `{{VOICE}}` marker. Appended
+// to the persona prefix when the avatar/voice is on so the model tags each
+// final answer with one delivery direction. It rides the Qwen3 `instruct`
+// channel — never spoken or shown — and `extractVoiceDirection` strips it from
+// every displayed message regardless of this setting, so no marker can leak.
+const VOICE_DIRECTION_CONTRACT =
+  "【音声演技ディレクション】最終回答の一番最初に、その回答全体をどう喋るかを {{VOICE: 演技指示}} の形式でちょうど1つ書く。" +
+  "感情・トーン・話速・間などを短い自然言語で書き、回答内容に合わせて毎回変える（淡々とした報告／少し弾んだ好反応／静かな気遣い等）。過剰演技はしない。" +
+  "これは画面に表示されず、読み上げ側のTTSに演出指示として渡るだけで、本文として読み上げられることはない。" +
+  "例: {{VOICE: 落ち着いた低い声で、静かに}} / {{VOICE: 明るめのトーンで少しだけ弾んで}}";
+
+// The spoken-channel override, mirroring the hage web `{{SPEAK}}` contract.
+// Lets the model decide what belongs to the ear vs the screen: the transcript
+// keeps the full answer, the voice reads only {{SPEAK}} when the answer is
+// screen-heavy. `extractSpeechMarkers` strips it everywhere so it never leaks.
+const SPEAK_CHANNEL_CONTRACT =
+  "【音声チャンネル（声に出す内容）】回答本文は画面用にこれまで通り書く（パス・コマンド・hash・コード断片・詳細を含めてよい）。ユーザーは全文を画面で読める。" +
+  "回答がコード / パス / URL / hash / 表 / 多段手順 など「耳で聞くと分かりにくい」内容を含むときは、先頭に {{SPEAK: 声に出す要旨}} を1つ書く。そこに書いた文だけが読み上げられ、本文はそのまま画面に残る。" +
+  "SPEAK は1〜2文の話し言葉。何をしたか（必要なら次の一手）を短く。ファイル名・行番号・コマンド・hash・バージョン番号は声に出さず役割で言う（「auth.rs:139 の validate_session」でなく「セッション検証を1か所」、「cargo test 42件パス」でなく「テストは通っています」）。" +
+  "回答がもともと短い会話文で、そのまま聞いても分かるなら SPEAK は省略してよい（本文がそのまま読まれる）。" +
+  "{{VOICE}} と併用する（VOICE=どう喋るか、SPEAK=何を声に出すか。順番は {{VOICE}} → {{SPEAK}}）。";
 
 const AVATAR_CHARACTERS: AvatarCharacter[] = [
   { label: "Eve (イヴ・既定)", keys: ["eve", "イヴ", "イブ"], id: EVE_AVATAR_ID, ttsBackend: "qwen3", speaker: "Ono_Anna", speed: 1.0, persona: EVE_PERSONA },
@@ -790,7 +821,78 @@ async function ensureEveAvatar(
   preparedEveBases.add(auth.base);
 }
 
-async function speak(text: string): Promise<void> {
+// Speech-channel markers (see VOICE_DIRECTION_CONTRACT / SPEAK_CHANNEL_CONTRACT):
+//   {{VOICE: ...}} — vocal-acting direction → Qwen3 `instruct`.
+//   {{SPEAK: ...}} — spoken override; when set, ONLY this is read aloud while
+//     the full answer stays in the transcript. Absent → the sanitized answer
+//     is spoken. This is the voice/text split the model controls.
+// `direction`/`spoken` are the first of each; `clean` is the text with every
+// marker removed (what the webview shows). Global + position-independent.
+const VOICE_MARKER_RE = /\{\{\s*VOICE\s*:\s*([\s\S]*?)\}\}/gi;
+const SPEAK_MARKER_RE = /\{\{\s*SPEAK\s*:\s*([\s\S]*?)\}\}/gi;
+
+function extractSpeechMarkers(text: string): {
+  direction: string | undefined;
+  spoken: string | undefined;
+  clean: string;
+} {
+  let direction: string | undefined;
+  let spoken: string | undefined;
+  const clean = String(text ?? "")
+    .replace(VOICE_MARKER_RE, (_m, dir: string) => {
+      if (direction === undefined) {
+        const d = String(dir).replace(/\s+/g, " ").trim();
+        if (d) {
+          direction = d;
+        }
+      }
+      return "";
+    })
+    .replace(SPEAK_MARKER_RE, (_m, say: string) => {
+      if (spoken === undefined) {
+        const s = String(say).replace(/\s+/g, " ").trim();
+        if (s) {
+          spoken = s;
+        }
+      }
+      return "";
+    })
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return { direction, spoken, clean };
+}
+
+// Minimal Markdown → speech normalizer for the *fallback* path (no {{SPEAK}}).
+// The transcript keeps the raw answer; this only shapes what the synthesizer
+// reads. kotonia-desktop has a fuller module; vscode keeps a compact port
+// since screen-heavy answers arrive via {{SPEAK}} already spoken-ready.
+const FENCED_CODE_RE = /(^|\n)\s*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n\s*\2\s*(?=\n|$)|$)/g;
+const SPEECH_PATH_RE = /(?<![\p{L}\p{N}_:/.])(?:~\/|\.{1,2}\/|\/)[^\s'"`<>()\\[\]{}]+/gu;
+
+function sanitizeForSpeech(input: string): string {
+  let t = String(input ?? "");
+  t = t.replace(FENCED_CODE_RE, (_m, lead: string) => `${lead}（コードは画面に表示しています）`);
+  t = t.replace(/!\[([^\]]*)\]\([^)]*\)/g, (_m, alt: string) => alt || "画像");
+  t = t.replace(/\[([^\]]+)\]\((?:[^()\\]|\\.)*\)/g, "$1");
+  t = t.replace(/`([^`\n]+)`/g, "$1");
+  t = t.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "");
+  t = t.replace(/^\s{0,3}#{1,6}\s+/gm, "").replace(/^\s{0,3}>\s?/gm, "");
+  t = t.replace(/^\s*(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s*)?/gm, "");
+  t = t.replace(/^\s*(?:[-*_]\s*){3,}$/gm, "");
+  t = t.replace(/(\*\*|__)(.*?)\1/g, "$2");
+  t = t.replace(/(?<!\w)(\*|_)([^\n]+?)\1(?!\w)/g, "$2");
+  t = t.replace(/~~([^~\n]+)~~/g, "$1");
+  // Collapse path tokens to their basename (`/a/b/foo.rs` → `foo.rs`).
+  t = t.replace(SPEECH_PATH_RE, (m) => {
+    const core = m.replace(/[.,:;)\]'"`]+$/, "");
+    const tail = m.slice(core.length);
+    const seg = core.split("/").filter(Boolean).pop();
+    return (seg && seg.length ? seg : core) + tail;
+  });
+  return t.replace(/[\t ]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+async function speak(text: string, direction?: string): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("kotonia");
   if (!cfg.get<boolean>("avatar.enabled", true)) {
     return;
@@ -836,8 +938,16 @@ async function speak(text: string): Promise<void> {
     : undefined;
   const language = cfg.get<string>("avatar.language", "ja");
   const dittoLanguage = language === "ja" ? "j" : language === "en" ? "a" : language === "zh" ? "z" : language;
+  // `text` is already the chosen channel ({{SPEAK}} override or the answer).
+  // Normalize Markdown/paths for the ear either way — SPEAK text is clean
+  // prose so this is a no-op there, and the fallback path stops reading raw
+  // markup aloud.
+  const spokenText = sanitizeForSpeech(text);
+  if (!spokenText.trim()) {
+    return;
+  }
   const body = {
-    text,
+    text: spokenText,
     avatar_id: resolved.id,
     tts_backend: resolved.ttsBackend,
     language,
@@ -845,6 +955,9 @@ async function speak(text: string): Promise<void> {
     speaker,
     speed: resolved.speed,
     fps: 25,
+    // Per-turn {{VOICE}} acting direction. The ditto→TTS proxy only forwards
+    // `instruct` for the qwen3 backend; aivis/irodori ignore it.
+    instruct: resolved.ttsBackend === "qwen3" ? direction : undefined,
     split_mixed_languages: resolved.ttsBackend === "qwen3",
   };
 
@@ -1073,6 +1186,14 @@ function codingPersonaPrefix(): string {
   const character = characterPersona();
   if (character) {
     blocks.push(character);
+  }
+  // Only ask for the {{VOICE}} direction when a voice can actually play.
+  // Stripping in onEngineMessage is unconditional, so a stale marker (e.g.
+  // avatar toggled off after spawn) still never reaches the transcript.
+  const cfg = vscode.workspace.getConfiguration("kotonia");
+  if (cfg.get<boolean>("avatar.enabled", true)) {
+    blocks.push(VOICE_DIRECTION_CONTRACT);
+    blocks.push(SPEAK_CHANNEL_CONTRACT);
   }
   return blocks.join("\n\n");
 }
