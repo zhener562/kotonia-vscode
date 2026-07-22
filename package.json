@@ -2,7 +2,7 @@
   "name": "kotonia-agent",
   "displayName": "Kotonia Agent",
   "description": "%extension.description%",
-  "version": "0.0.28",
+  "version": "0.0.29",
   "publisher": "shinjishimizu",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -289,7 +289,7 @@
         },
         "kotonia.avatar.speed": {
           "type": "number",
-          "default": 1.0,
+          "default": 1,
           "description": "Advanced custom-avatar speech speed. Named presets use their canonical speed; Eve uses 1.0."
         },
         "kotonia.avatar.language": {
