@@ -782,7 +782,7 @@ async function ensureEveAvatar(
   }
 
   const headers = { Authorization: `Bearer ${auth.token}` };
-  const listed = await fetch(`${auth.base}/api/voice/ditto/avatars`, { headers, signal });
+  const listed = await fetch(`${auth.base}/api/v1/avatars`, { headers, signal });
   if (listed.ok) {
     const payload = (await listed.json()) as unknown;
     const avatars = Array.isArray(payload)
@@ -808,7 +808,7 @@ async function ensureEveAvatar(
   const form = new FormData();
   form.append("avatar_id", EVE_AVATAR_ID);
   form.append("file", new Blob([new Uint8Array(image)], { type: "image/jpeg" }), "eve.jpg");
-  const prepared = await fetch(`${auth.base}/api/voice/ditto/prepare`, {
+  const prepared = await fetch(`${auth.base}/api/v1/avatars`, {
     method: "POST",
     headers,
     body: form,
@@ -947,8 +947,7 @@ async function speak(text: string, direction?: string): Promise<void> {
     return;
   }
   const body = {
-    text: spokenText,
-    avatar_id: resolved.id,
+    input: spokenText,
     tts_backend: resolved.ttsBackend,
     language,
     lang: dittoLanguage,
@@ -962,7 +961,8 @@ async function speak(text: string, direction?: string): Promise<void> {
   };
 
   try {
-    const res = await fetch(`${auth.base}/api/voice/ditto/tts/stream/avatar`, {
+    const avatarId = encodeURIComponent(resolved.id);
+    const res = await fetch(`${auth.base}/api/v1/avatars/${avatarId}/speech`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.token}` },
       body: JSON.stringify(body),
