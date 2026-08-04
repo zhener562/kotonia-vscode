@@ -36,6 +36,9 @@ export class AvatarPanel {
   stop(): void {
     this.panel.webview.postMessage({ kind: "avatarStop" });
   }
+  setProfile(image: string, name: string): void {
+    this.panel.webview.postMessage({ kind: "profile", image, name });
+  }
   reveal(): void {
     this.panel.reveal(undefined, true);
   }
@@ -49,7 +52,7 @@ export class AvatarPanel {
     const stillUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "eve.jpg"));
     const csp = [
       "default-src 'none'",
-      `img-src ${webview.cspSource} blob:`,
+      `img-src ${webview.cspSource} data: blob:`,
       "style-src 'unsafe-inline'",
       `script-src 'nonce-${nonce}'`,
       "media-src blob:",

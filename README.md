@@ -95,6 +95,20 @@ Development Host).
 | `kotonia.workspaceMode` | `in-place` | `in-place` (live editor changes) or preserved isolated `worktree`. |
 | `kotonia.extraArgs` | `[]` | Extra engine CLI args. |
 
+## Profile and conversation modes
+
+The editor chat header now switches live between **Text**, **Voice**, and
+**Avatar**. Avatar mode keeps the lip-sync portrait inside the conversation
+window; Voice plays the same response without rendering video. The selected
+mode is persisted in `kotonia.outputMode`.
+
+Open **Profile** in that same header to edit the display name, tagline,
+additional system prompt, personality/speaking style, and a local face image.
+Visual changes apply immediately. Prompt changes are applied when the next new
+chat starts, because an existing agent session must keep one stable system
+prompt. A custom face image is also registered as a private Ditto avatar on
+first use so the generated lip-sync matches the selected portrait.
+
 ## Current capabilities
 
 - session list/resume with clean user/assistant history restoration;

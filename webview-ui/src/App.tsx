@@ -4,7 +4,8 @@ import { engineToRow } from "./rows";
 import { esc, mdToHtml } from "./md";
 import { Approval, type ApprovalData } from "./components/Approval";
 import { Composer } from "./components/Composer";
-import type { HostMessage } from "./types";
+import { AvatarStage, type AvatarEvent } from "./components/AvatarStage";
+import type { HostMessage, ProfileState } from "./types";
 
 type Entry =
   | { id: number; kind: "user"; text: string }
@@ -21,7 +22,17 @@ interface PersistedState {
   busy: boolean;
   status: Status;
   lastTurn: number;
+  profile?: ProfileState;
 }
+
+const defaultProfile: ProfileState = {
+  name: "Eve",
+  tagline: "coding partner",
+  systemPrompt: "",
+  persona: "",
+  avatarImage: "",
+  outputMode: "avatar",
+};
 
 export function App() {
   const initial = useRef(getState<PersistedState>()).current;
@@ -30,6 +41,10 @@ export function App() {
   const [status, setStatus] = useState<Status>(
     initial?.status ?? { text: "engine starting…", ready: false },
   );
+  const [profile, setProfile] = useState<ProfileState>(initial?.profile ?? defaultProfile);
+  const [avatarEvent, setAvatarEvent] = useState<AvatarEvent>();
+  const [profileOpen, setProfileOpen] = useState(false);
+  const avatarSeqRef = useRef(0);
 
   const logRef = useRef<HTMLDivElement>(null);
   const idRef = useRef(Math.max(0, ...(initial?.entries ?? []).map((entry) => entry.id)));
@@ -106,6 +121,26 @@ export function App() {
           addRow(turnId, "note", `<span class="dim">ℹ ${esc(data.text)}</span>`);
           break;
         }
+        case "profile":
+          setProfile(data.profile);
+          break;
+        case "avatarBegin":
+          setAvatarEvent({ seq: ++avatarSeqRef.current, kind: "begin" });
+          break;
+        case "avatarChunk":
+          setAvatarEvent({
+            seq: ++avatarSeqRef.current,
+            kind: "chunk",
+            chunkType: data.chunkType,
+            data: data.data,
+          });
+          break;
+        case "avatarEnd":
+          setAvatarEvent({ seq: ++avatarSeqRef.current, kind: "end" });
+          break;
+        case "avatarStop":
+          setAvatarEvent({ seq: ++avatarSeqRef.current, kind: "stop" });
+          break;
         case "reset":
           setEntries([]);
           setBusy(false);
@@ -124,8 +159,9 @@ export function App() {
       busy,
       status,
       lastTurn: lastTurnRef.current,
+      profile,
     });
-  }, [entries, busy, status]);
+  }, [entries, busy, status, profile]);
 
   // Keep the log pinned to the newest content, matching the old scrollToEnd().
   useLayoutEffect(() => {
@@ -164,6 +200,39 @@ export function App() {
 
   return (
     <>
+      <header className="conversation-header">
+        <div className="profile-summary">
+          {profile.avatarImage ? <img src={profile.avatarImage} alt="" /> : null}
+          <div>
+            <strong>{profile.name || "Kotonia"}</strong>
+            <span>{profile.tagline}</span>
+          </div>
+        </div>
+        <div className="mode-switch" role="group" aria-label="output mode">
+          {(["text", "voice", "avatar"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              className={profile.outputMode === mode ? "active" : ""}
+              onClick={() => {
+                setProfile((current) => ({ ...current, outputMode: mode }));
+                postAction({ kind: "setOutputMode", mode });
+              }}
+            >
+              {mode === "text" ? "Text" : mode === "voice" ? "Voice" : "Avatar"}
+            </button>
+          ))}
+        </div>
+        <button type="button" className="profile-settings-button" onClick={() => setProfileOpen(true)}>
+          Profile
+        </button>
+      </header>
+      <AvatarStage
+        image={profile.avatarImage}
+        name={profile.name}
+        mode={profile.outputMode}
+        event={avatarEvent}
+      />
       <div className={status.ready ? "status ready" : "status"}>{status.text}</div>
       <div className="log" ref={logRef} onClick={onLogClick}>
         {groupTurns(entries).map((group) => (
@@ -175,7 +244,78 @@ export function App() {
         ))}
       </div>
       <Composer busy={busy} onSend={send} onCancel={() => postAction({ kind: "cancel" })} />
+      {profileOpen ? (
+        <ProfileEditor
+          profile={profile}
+          onClose={() => setProfileOpen(false)}
+          onSave={(next) => {
+            setProfile((current) => ({ ...current, ...next }));
+            postAction({ kind: "saveProfile", profile: next });
+            setProfileOpen(false);
+          }}
+        />
+      ) : null}
     </>
+  );
+}
+
+function ProfileEditor({
+  profile,
+  onClose,
+  onSave,
+}: {
+  profile: ProfileState;
+  onClose: () => void;
+  onSave: (profile: Pick<ProfileState, "name" | "tagline" | "systemPrompt" | "persona">) => void;
+}) {
+  const [draft, setDraft] = useState(profile);
+  return (
+    <div className="profile-modal" role="dialog" aria-modal="true" aria-label="Profile settings">
+      <form
+        className="profile-editor"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSave(draft);
+        }}
+      >
+        <h2>Profile</h2>
+        <label>
+          表示名
+          <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+        </label>
+        <label>
+          肩書き
+          <input value={draft.tagline} onChange={(e) => setDraft({ ...draft, tagline: e.target.value })} />
+        </label>
+        <label>
+          追加システムプロンプト
+          <textarea
+            rows={6}
+            value={draft.systemPrompt}
+            onChange={(e) => setDraft({ ...draft, systemPrompt: e.target.value })}
+          />
+        </label>
+        <label>
+          人格・話し方
+          <textarea
+            rows={6}
+            value={draft.persona}
+            onChange={(e) => setDraft({ ...draft, persona: e.target.value })}
+          />
+        </label>
+        <div className="profile-image-row">
+          {profile.avatarImage ? <img src={profile.avatarImage} alt="" /> : null}
+          <button type="button" onClick={() => postAction({ kind: "pickProfileImage" })}>
+            顔画像を選ぶ
+          </button>
+        </div>
+        <p className="profile-hint">プロンプトの変更は次の新規チャットから反映されます。</p>
+        <div className="profile-actions">
+          <button type="button" onClick={onClose}>キャンセル</button>
+          <button type="submit" className="primary">保存</button>
+        </div>
+      </form>
+    </div>
   );
 }
 

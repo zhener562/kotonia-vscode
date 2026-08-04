@@ -9,6 +9,7 @@ import * as path from "path";
 import * as os from "os";
 import * as fs from "fs";
 import * as https from "https";
+import { createHash } from "crypto";
 import { execFile, spawn } from "child_process";
 import { KotoniaEngine } from "./engine";
 import { ChatPanel } from "./panel";
@@ -39,8 +40,18 @@ let sessionTree: SessionTreeProvider;
 let output: vscode.OutputChannel;
 let extContext: vscode.ExtensionContext;
 let speakAbort: AbortController | undefined;
+type OutputMode = "text" | "voice" | "avatar";
+
+interface ProfileViewState {
+  name: string;
+  tagline: string;
+  systemPrompt: string;
+  persona: string;
+  avatarImage: string;
+  outputMode: OutputMode;
+}
 let authKnownInvalid = false;
-const preparedEveBases = new Set<string>();
+const preparedAvatarKeys = new Set<string>();
 
 /** Post to the chat panel (the only chat surface). No-op if it's closed. */
 const ui = {
@@ -57,16 +68,19 @@ const ui = {
     chatPanel?.reset();
   },
   avatarBegin(): void {
-    ensureAvatarPanel();
+    chatPanel?.avatarBegin();
     avatarPanel?.begin();
   },
   avatarChunk(chunkType: number, data: string): void {
+    chatPanel?.avatarChunk(chunkType, data);
     avatarPanel?.chunk(chunkType, data);
   },
   avatarEnd(): void {
+    chatPanel?.avatarEnd();
     avatarPanel?.end();
   },
   avatarStop(): void {
+    chatPanel?.avatarStop();
     avatarPanel?.stop();
   },
 };
@@ -161,6 +175,7 @@ function ensureAvatarPanel(): void {
   avatarPanel = new AvatarPanel(extContext.extensionUri, () => {
     avatarPanel = undefined;
   });
+  void postProfile();
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -420,6 +435,7 @@ function handlePanelAction(a: PanelAction): void {
       if (engineState?.hello) {
         ui.postEngineMessage(engineState.hello);
       }
+      void postProfile();
       break;
     case "send": {
       if (!engineState) {
@@ -444,6 +460,15 @@ function handlePanelAction(a: PanelAction): void {
       break;
     case "previewResource":
       void previewHtmlResource(a.target);
+      break;
+    case "setOutputMode":
+      void setOutputMode(a.mode);
+      break;
+    case "saveProfile":
+      void saveProfile(a.profile);
+      break;
+    case "pickProfileImage":
+      void pickProfileImage();
       break;
   }
 }
@@ -511,23 +536,118 @@ function onEngineExit(code: number | null): void {
   });
 }
 
-// ---- talking avatar (#3) ---------------------------------------------------
+// ---- profile + output mode ------------------------------------------------
 
-function toggleAvatar(): void {
+function outputMode(): OutputMode {
   const cfg = vscode.workspace.getConfiguration("kotonia");
-  const next = !cfg.get<boolean>("avatar.enabled", true);
-  void cfg.update("avatar.enabled", next, vscode.ConfigurationTarget.Workspace);
-  if (next) {
-    const name = cfg.get<string>("avatar.character", "eve").trim();
-    ensureAvatarPanel();
-    ui.note(`talking avatar ON（${name}）.`);
-  } else {
-    ui.note("talking avatar OFF.");
+  const configured = cfg.get<string>("outputMode", "avatar");
+  if (configured === "text" || configured === "voice" || configured === "avatar") {
+    return configured;
   }
-  if (!next) {
+  return cfg.get<boolean>("avatar.enabled", true) ? "avatar" : "text";
+}
+
+async function setOutputMode(mode: OutputMode): Promise<void> {
+  const cfg = vscode.workspace.getConfiguration("kotonia");
+  await cfg.update("outputMode", mode, vscode.ConfigurationTarget.Workspace);
+  await cfg.update("avatar.enabled", mode !== "text", vscode.ConfigurationTarget.Workspace);
+  if (mode === "text") {
     speakAbort?.abort();
     ui.avatarStop();
   }
+  await postProfile();
+  ui.note(`output mode: ${mode}.`);
+}
+
+function profileImagePath(): string | undefined {
+  const raw = vscode.workspace.getConfiguration("kotonia").get<string>("profile.avatarImage", "").trim();
+  if (!raw) return undefined;
+  let resolved: string;
+  if (raw === "~") resolved = os.homedir();
+  else if (raw.startsWith("~/")) resolved = path.join(os.homedir(), raw.slice(2));
+  else if (path.isAbsolute(raw)) resolved = raw;
+  else {
+    const folder = pickWorkspaceFolder();
+    resolved = folder ? path.join(folder.uri.fsPath, raw) : raw;
+  }
+  try {
+    return fs.statSync(resolved).isFile() ? resolved : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function imageDataUri(file: string): string | undefined {
+  try {
+    const stat = fs.statSync(file);
+    if (!stat.isFile() || stat.size > 12 * 1024 * 1024) return undefined;
+    const ext = path.extname(file).toLowerCase();
+    const mime = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
+    return `data:${mime};base64,${fs.readFileSync(file).toString("base64")}`;
+  } catch {
+    return undefined;
+  }
+}
+
+async function profileViewState(): Promise<ProfileViewState> {
+  const cfg = vscode.workspace.getConfiguration("kotonia");
+  const custom = profileImagePath();
+  const bundled = vscode.Uri.joinPath(extContext.extensionUri, "media", "eve.jpg").fsPath;
+  return {
+    name: cfg.get<string>("profile.name", "Eve"),
+    tagline: cfg.get<string>("profile.tagline", "observant coding partner"),
+    systemPrompt: cfg.get<string>("profile.systemPrompt", ""),
+    persona: cfg.get<string>("profile.persona", ""),
+    avatarImage: imageDataUri(custom ?? bundled) ?? imageDataUri(bundled) ?? "",
+    outputMode: outputMode(),
+  };
+}
+
+async function postProfile(): Promise<void> {
+  const profile = await profileViewState();
+  chatPanel?.setProfile(profile);
+  avatarPanel?.setProfile(profile.avatarImage, profile.name);
+}
+
+async function saveProfile(profile: {
+  name: string;
+  tagline: string;
+  systemPrompt: string;
+  persona: string;
+}): Promise<void> {
+  const cfg = vscode.workspace.getConfiguration("kotonia");
+  const target = vscode.ConfigurationTarget.Workspace;
+  await Promise.all([
+    cfg.update("profile.name", profile.name.trim() || "Kotonia", target),
+    cfg.update("profile.tagline", profile.tagline.trim(), target),
+    cfg.update("profile.systemPrompt", profile.systemPrompt.trim(), target),
+    cfg.update("profile.persona", profile.persona.trim(), target),
+  ]);
+  await postProfile();
+  ui.note("profile saved — prompt changes apply to the next new chat.");
+}
+
+async function pickProfileImage(): Promise<void> {
+  const picked = await vscode.window.showOpenDialog({
+    canSelectMany: false,
+    canSelectFiles: true,
+    canSelectFolders: false,
+    filters: { Images: ["png", "jpg", "jpeg", "webp"] },
+    title: "Kotonia profile image",
+  });
+  const file = picked?.[0]?.fsPath;
+  if (!file) return;
+  await vscode.workspace
+    .getConfiguration("kotonia")
+    .update("profile.avatarImage", file, vscode.ConfigurationTarget.Workspace);
+  await postProfile();
+}
+
+// ---- talking avatar (#3) ---------------------------------------------------
+
+function toggleAvatar(): void {
+  const next: OutputMode = outputMode() === "avatar" ? "text" : "avatar";
+  void setOutputMode(next);
 }
 
 /** Named avatar characters. The user picks one by NAME
@@ -624,7 +744,19 @@ function resolveAvatar(cfg: vscode.WorkspaceConfiguration): {
   ttsBackend: string;
   speaker: string;
   speed: number;
+  imagePath?: string;
 } {
+  const customImage = profileImagePath();
+  if (customImage) {
+    const digest = createHash("sha256").update(customImage).digest("hex").slice(0, 12);
+    return {
+      id: `vscode-profile-${digest}`,
+      ttsBackend: cfg.get<string>("avatar.ttsBackend", "qwen3"),
+      speaker: cfg.get<string>("avatar.speaker", "Ono_Anna"),
+      speed: cfg.get<number>("avatar.speed", 1.0),
+      imagePath: customImage,
+    };
+  }
   const character = cfg.get<string>("avatar.character", "eve").trim();
   const c = findCharacter(character);
   if (c) {
@@ -773,11 +905,14 @@ function readAvatarAuth(cfg: vscode.WorkspaceConfiguration): { base: string; tok
 /** Ensure the bundled Eve portrait is registered with Ditto. Desktop performs
  * the same idempotent check at startup; doing it here keeps the VS Code
  * extension self-contained when desktop has never run on this machine. */
-async function ensureEveAvatar(
+async function ensureAvatarRegistered(
   auth: { base: string; token: string },
   signal: AbortSignal,
+  avatarId: string,
+  imagePath?: string,
 ): Promise<void> {
-  if (preparedEveBases.has(auth.base)) {
+  const cacheKey = `${auth.base}\n${avatarId}`;
+  if (preparedAvatarKeys.has(cacheKey)) {
     return;
   }
 
@@ -794,20 +929,23 @@ async function ensureEveAvatar(
       (entry) =>
         entry !== null &&
         typeof entry === "object" &&
-        (entry as { avatar_id?: unknown }).avatar_id === EVE_AVATAR_ID,
+        (entry as { avatar_id?: unknown }).avatar_id === avatarId,
     );
     if (found) {
-      preparedEveBases.add(auth.base);
+      preparedAvatarKeys.add(cacheKey);
       return;
     }
   } else if (listed.status === 401 || listed.status === 403) {
     throw new Error(`avatar list returned HTTP ${listed.status}`);
   }
 
-  const image = fs.readFileSync(vscode.Uri.joinPath(extContext.extensionUri, "media", "eve.jpg").fsPath);
+  const file = imagePath ?? vscode.Uri.joinPath(extContext.extensionUri, "media", "eve.jpg").fsPath;
+  const image = fs.readFileSync(file);
+  const ext = path.extname(file).toLowerCase();
+  const mime = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
   const form = new FormData();
-  form.append("avatar_id", EVE_AVATAR_ID);
-  form.append("file", new Blob([new Uint8Array(image)], { type: "image/jpeg" }), "eve.jpg");
+  form.append("avatar_id", avatarId);
+  form.append("file", new Blob([new Uint8Array(image)], { type: mime }), path.basename(file));
   const prepared = await fetch(`${auth.base}/api/v1/avatars`, {
     method: "POST",
     headers,
@@ -818,7 +956,7 @@ async function ensureEveAvatar(
     const detail = (await prepared.text()).trim().slice(0, 240);
     throw new Error(`avatar prepare returned HTTP ${prepared.status}${detail ? `: ${detail}` : ""}`);
   }
-  preparedEveBases.add(auth.base);
+  preparedAvatarKeys.add(cacheKey);
 }
 
 // Speech-channel markers (see VOICE_DIRECTION_CONTRACT / SPEAK_CHANNEL_CONTRACT):
@@ -894,7 +1032,8 @@ function sanitizeForSpeech(input: string): string {
 
 async function speak(text: string, direction?: string): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("kotonia");
-  if (!cfg.get<boolean>("avatar.enabled", true)) {
+  const mode = outputMode();
+  if (mode === "text") {
     return;
   }
   const resolved = resolveAvatar(cfg);
@@ -910,11 +1049,9 @@ async function speak(text: string, direction?: string): Promise<void> {
   speakAbort?.abort();
   const abort = new AbortController();
   speakAbort = abort;
-  ensureAvatarPanel();
-
-  if (resolved.id === EVE_AVATAR_ID) {
+  if (resolved.id === EVE_AVATAR_ID || resolved.imagePath) {
     try {
-      await ensureEveAvatar(auth, abort.signal);
+      await ensureAvatarRegistered(auth, abort.signal, resolved.id, resolved.imagePath);
     } catch (e) {
       const err = e as { name?: string; message?: string };
       if (err.name === "AbortError") {
@@ -923,7 +1060,7 @@ async function speak(text: string, direction?: string): Promise<void> {
       // Continue: Eve may already be registered even if the list/prepare
       // probe was temporarily unavailable, and the stream endpoint is the
       // authoritative final check.
-      ui.note(`avatar: Eve registration check failed — ${err.message ?? String(e)}`);
+      ui.note(`avatar registration check failed — ${err.message ?? String(e)}`);
     }
   }
 
@@ -1183,15 +1320,23 @@ function promptLoginApproval(code: string, url?: string): void {
 
 function codingPersonaPrefix(): string {
   const blocks = [EVE_CODE_PERSONA];
+  const cfg = vscode.workspace.getConfiguration("kotonia");
+  const systemPrompt = cfg.get<string>("profile.systemPrompt", "").trim();
+  const customPersona = cfg.get<string>("profile.persona", "").trim();
+  if (systemPrompt) {
+    blocks.push(systemPrompt);
+  }
+  if (customPersona) {
+    blocks.push(customPersona);
+  }
   const character = characterPersona();
-  if (character) {
+  if (character && !customPersona) {
     blocks.push(character);
   }
   // Only ask for the {{VOICE}} direction when a voice can actually play.
   // Stripping in onEngineMessage is unconditional, so a stale marker (e.g.
   // avatar toggled off after spawn) still never reaches the transcript.
-  const cfg = vscode.workspace.getConfiguration("kotonia");
-  if (cfg.get<boolean>("avatar.enabled", true)) {
+  if (outputMode() !== "text") {
     blocks.push(VOICE_DIRECTION_CONTRACT);
     blocks.push(SPEAK_CHANNEL_CONTRACT);
   }

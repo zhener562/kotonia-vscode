@@ -16,6 +16,12 @@ export type PanelAction =
   | { kind: "cancel" }
   | { kind: "openResource"; target: string; line?: number }
   | { kind: "previewResource"; target: string }
+  | { kind: "setOutputMode"; mode: "text" | "voice" | "avatar" }
+  | {
+      kind: "saveProfile";
+      profile: { name: string; tagline: string; systemPrompt: string; persona: string };
+    }
+  | { kind: "pickProfileImage" }
   | { kind: "ready" };
 
 export function getNonce(): string {
@@ -40,7 +46,7 @@ export function renderChatHtml(webview: vscode.Webview, extensionUri: vscode.Uri
   );
   const csp = [
     `default-src 'none'`,
-    `img-src ${webview.cspSource} blob:`,
+    `img-src ${webview.cspSource} data: blob:`,
     `style-src ${webview.cspSource}`,
     `script-src 'nonce-${nonce}'`,
     `media-src blob:`,
