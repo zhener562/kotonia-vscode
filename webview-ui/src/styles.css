@@ -29,6 +29,194 @@ body {
   flex-direction: column;
 }
 
+.conversation-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.profile-summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  margin-right: auto;
+}
+.profile-summary img {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+}
+.profile-summary div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.profile-summary span {
+  color: var(--muted);
+  font-size: 0.8em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mode-switch {
+  display: flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.mode-switch button,
+.profile-settings-button {
+  color: var(--vscode-foreground);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+.mode-switch button.active {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+}
+.profile-settings-button {
+  border: 1px solid var(--border);
+}
+
+.avatar-stage {
+  position: absolute;
+  z-index: 4;
+  top: 62px;
+  right: 18px;
+  width: clamp(150px, 22vw, 260px);
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+}
+.avatar-stage img,
+.avatar-stage canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.avatar-live {
+  position: absolute;
+  inset: 0;
+}
+.avatar-live.hidden {
+  visibility: hidden;
+}
+.avatar-pulse {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--vscode-descriptionForeground);
+}
+.avatar-stage.speaking .avatar-pulse {
+  background: var(--vscode-terminal-ansiGreen);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--vscode-terminal-ansiGreen) 25%, transparent);
+}
+.avatar-unmute {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.voice-state {
+  position: absolute;
+  z-index: 4;
+  top: 66px;
+  right: 18px;
+  color: var(--muted);
+  font-size: 0.8em;
+}
+.voice-state.speaking {
+  color: var(--vscode-terminal-ansiGreen);
+}
+.voice-state button {
+  margin-left: 8px;
+}
+
+.profile-modal {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.45);
+}
+.profile-editor {
+  width: min(680px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--vscode-editor-background);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+}
+.profile-editor h2 {
+  margin: 0 0 14px;
+}
+.profile-editor label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 10px 0;
+  color: var(--muted);
+}
+.profile-editor input,
+.profile-editor textarea {
+  width: 100%;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--border));
+  padding: 7px 9px;
+  font: inherit;
+  resize: vertical;
+}
+.profile-image-row,
+.profile-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.profile-image-row img {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+.profile-hint {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+.profile-actions {
+  justify-content: flex-end;
+}
+.profile-actions .primary {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+}
+
+@media (max-width: 620px) {
+  .conversation-header { gap: 6px; }
+  .profile-summary span { display: none; }
+  .mode-switch button { padding: 5px 6px; }
+  .avatar-stage { width: 135px; right: 10px; }
+}
+
 .status {
   padding: 7px 14px;
   font-size: 0.85em;

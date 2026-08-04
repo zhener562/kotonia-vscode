@@ -179,5 +179,9 @@
     else if (d.kind === "avatarChunk") chunk(d.chunkType, d.data);
     else if (d.kind === "avatarEnd") end();
     else if (d.kind === "avatarStop") stop();
+    else if (d.kind === "profile" && still) {
+      still.src = d.image || still.src;
+      still.alt = d.name || "Avatar";
+    }
   });
 })();

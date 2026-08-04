@@ -2,7 +2,7 @@
   "name": "kotonia-agent",
   "displayName": "Kotonia Agent",
   "description": "%extension.description%",
-  "version": "0.0.30",
+  "version": "0.0.31",
   "publisher": "shinjishimizu",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -251,10 +251,45 @@
           "default": "ja",
           "markdownDescription": "Default reply language for the agent (BCP-47-ish code, e.g. `ja`, `en`, `zh`). Applied to the engine system prompt for the whole session; the agent still switches if you write in another language. Empty = no language steering."
         },
+        "kotonia.outputMode": {
+          "type": "string",
+          "enum": [
+            "text",
+            "voice",
+            "avatar"
+          ],
+          "default": "avatar",
+          "markdownDescription": "Conversation output in the editor chat: `text`, audio-only `voice`, or the in-chat lip-sync `avatar`. This can also be changed live from the chat header."
+        },
+        "kotonia.profile.name": {
+          "type": "string",
+          "default": "Eve",
+          "description": "Display name shown in the conversation header."
+        },
+        "kotonia.profile.tagline": {
+          "type": "string",
+          "default": "observant coding partner",
+          "description": "Short profile subtitle shown under the display name."
+        },
+        "kotonia.profile.systemPrompt": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Additional system-level instructions applied to new ReAct sessions. Kotonia's coding/tool safety prompt remains active."
+        },
+        "kotonia.profile.persona": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Custom identity, personality, and speaking-style instructions. When set, this replaces the selected avatar preset's built-in personality."
+        },
+        "kotonia.profile.avatarImage": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Local PNG/JPEG/WebP path for the profile portrait and custom Ditto face. Relative paths resolve from the workspace. Pick it from the in-chat Profile editor to avoid typing a path."
+        },
         "kotonia.avatar.enabled": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Show Eve in a movable/resizable avatar panel and animate her with Ditto for each final answer. The bundled still portrait is visible immediately, even before the first response or when Ditto/TTS is unavailable."
+          "markdownDescription": "Legacy compatibility switch. Prefer `kotonia.outputMode`; non-text modes keep this enabled automatically."
         },
         "kotonia.avatar.character": {
           "type": "string",

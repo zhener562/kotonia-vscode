@@ -47,7 +47,21 @@ export type HostMessage =
   | { kind: "engine"; msg: EngineMessage }
   | { kind: "busy"; busy: boolean }
   | { kind: "note"; text: string; turnId?: number }
+  | { kind: "profile"; profile: ProfileState }
+  | { kind: "avatarBegin" }
+  | { kind: "avatarChunk"; chunkType: number; data: string }
+  | { kind: "avatarEnd" }
+  | { kind: "avatarStop" }
   | { kind: "reset" };
+
+export interface ProfileState {
+  name: string;
+  tagline: string;
+  systemPrompt: string;
+  persona: string;
+  avatarImage: string;
+  outputMode: "text" | "voice" | "avatar";
+}
 
 /** Actions the webview posts up to the host (matches PanelAction). */
 export type PanelAction =
@@ -56,4 +70,10 @@ export type PanelAction =
   | { kind: "cancel" }
   | { kind: "openResource"; target: string; line?: number }
   | { kind: "previewResource"; target: string }
+  | { kind: "setOutputMode"; mode: "text" | "voice" | "avatar" }
+  | {
+      kind: "saveProfile";
+      profile: { name: string; tagline: string; systemPrompt: string; persona: string };
+    }
+  | { kind: "pickProfileImage" }
   | { kind: "ready" };
