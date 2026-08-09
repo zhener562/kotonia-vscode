@@ -2,7 +2,7 @@
   "name": "kotonia-agent",
   "displayName": "Kotonia Agent",
   "description": "%extension.description%",
-  "version": "0.0.31",
+  "version": "0.0.32",
   "publisher": "shinjishimizu",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -294,7 +294,7 @@
         "kotonia.avatar.character": {
           "type": "string",
           "default": "eve",
-          "markdownDescription": "Talking avatar **by name**. `eve` is the product default and resolves to Eve's face, Qwen3 voice, and speaking style as one preset. `ことな` and `ひなた` remain optional presets. Any other value is treated as a raw `avatar_id`."
+          "markdownDescription": "Talking avatar **by name**. `eve` is the product default and resolves to Eve's face, VoxCPM2 voice, and speaking style as one preset. `ことな` and `ひなた` remain optional presets. Any other value is treated as a raw `avatar_id`."
         },
         "kotonia.avatar.persona": {
           "type": "boolean",
@@ -309,18 +309,19 @@
         "kotonia.avatar.ttsBackend": {
           "type": "string",
           "enum": [
-            "qwen3",
+            "voxcpm",
             "irodori",
             "voicevox",
-            "aivis"
+            "aivis",
+            "qwen3"
           ],
-          "default": "qwen3",
-          "description": "Advanced custom-avatar TTS backend. Named presets ignore this value; Eve uses Qwen3-TTS."
+          "default": "voxcpm",
+          "description": "Advanced custom-avatar TTS backend. Named presets ignore this value; Eve uses VoxCPM2. `qwen3` is kept only as a deprecated alias — the server routes it to VoxCPM2."
         },
         "kotonia.avatar.speaker": {
           "type": "string",
-          "default": "Ono_Anna",
-          "description": "Advanced custom-avatar speaker id. Named presets ignore this value; Eve uses the Qwen3-TTS Ono_Anna voice."
+          "default": "若い成人女性の落ち着いた低声。穏やかな中低音で柔らかな音色、ゆっくり明瞭に、抑制の効いた観測者らしい冷静な口調で話す",
+          "description": "Advanced custom-avatar voice: a VoxCPM2 Voice Design (natural-language description) for `voxcpm`, or a numeric speaker id for aivis/voicevox. Named presets ignore this value; Eve uses her own Voice Design."
         },
         "kotonia.avatar.speed": {
           "type": "number",

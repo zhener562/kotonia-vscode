@@ -134,7 +134,7 @@ const HELP_HTML = `<!DOCTYPE html>
     <tr><td class="k"><span class="icon">＋</span> 新規チャット</td><td>新しいセッション（エンジン）を開始して中央のチャットを開く。</td></tr>
     <tr><td class="k"><span class="icon">⟳</span> 更新</td><td>左のセッション一覧を再読み込み。</td></tr>
     <tr><td class="k"><span class="icon">▷</span> モデルを選択</td><td>使う LLM を切替（<code>kotonia-llm-basic</code> / <code>deepseek-chat</code> / ローカル / カスタム）。反映は新規チャットから。</td></tr>
-    <tr><td class="k"><span class="icon">☺</span> アバターを選択</td><td>既定は <b>Eve（顔・Qwen3音声・人格）</b>。ことな / ひなた へ切替、または任意の avatar_id も指定可能。</td></tr>
+    <tr><td class="k"><span class="icon">☺</span> アバターを選択</td><td>既定は <b>Eve（顔・VoxCPM2音声・人格）</b>。ことな / ひなた へ切替、または任意の avatar_id も指定可能。</td></tr>
     <tr><td class="k"><span class="icon">⇥</span> ログイン / ログアウト</td><td>kotonia.ai にデバイスログイン（ブラウザで承認）。ログイン中は「ログアウト」表示。ホストモデルはこれだけで使える。</td></tr>
   </table>
 
@@ -659,6 +659,8 @@ interface AvatarCharacter {
   keys: string[];
   id: string;
   ttsBackend: string;
+  /** VoxCPM2 Voice Design (natural-language description) for `voxcpm`, or a
+   * numeric speaker id string for aivis/voicevox. */
   speaker: string;
   speed: number;
   /** Voice/style overlay only. Coding policy comes from Eve Code so changing
@@ -693,7 +695,7 @@ const EVE_PERSONA =
 
 // Vocal-acting contract, mirroring the hage web `{{VOICE}}` marker. Appended
 // to the persona prefix when the avatar/voice is on so the model tags each
-// final answer with one delivery direction. It rides the Qwen3 `instruct`
+// final answer with one delivery direction. It rides the VoxCPM2 `instruct`
 // channel — never spoken or shown — and `extractVoiceDirection` strips it from
 // every displayed message regardless of this setting, so no marker can leak.
 const VOICE_DIRECTION_CONTRACT =
@@ -714,7 +716,8 @@ const SPEAK_CHANNEL_CONTRACT =
   "{{VOICE}} と併用する（VOICE=どう喋るか、SPEAK=何を声に出すか。順番は {{VOICE}} → {{SPEAK}}）。";
 
 const AVATAR_CHARACTERS: AvatarCharacter[] = [
-  { label: "Eve (イヴ・既定)", keys: ["eve", "イヴ", "イブ"], id: EVE_AVATAR_ID, ttsBackend: "qwen3", speaker: "Ono_Anna", speed: 1.0, persona: EVE_PERSONA },
+  // Eve speaks Japanese, so her VoxCPM2 Voice Design is written in Japanese.
+  { label: "Eve (イヴ・既定)", keys: ["eve", "イヴ", "イブ"], id: EVE_AVATAR_ID, ttsBackend: "voxcpm", speaker: "若い成人女性の落ち着いた低声。穏やかな中低音で柔らかな音色、ゆっくり明瞭に、抑制の効いた観測者らしい冷静な口調で話す", speed: 1.0, persona: EVE_PERSONA },
   { label: "ことな (Kotona)", keys: ["ことな", "kotona"], id: "kotona_v4", ttsBackend: "aivis", speaker: "888753762", speed: 1.2, persona: KOTONA_PERSONA },
   { label: "ひなた (Hinata)", keys: ["ひなた", "hinata"], id: "persona_media_45_ditto", ttsBackend: "irodori", speaker: "", speed: 1.0, persona: HINATA_PERSONA },
 ];
@@ -751,8 +754,8 @@ function resolveAvatar(cfg: vscode.WorkspaceConfiguration): {
     const digest = createHash("sha256").update(customImage).digest("hex").slice(0, 12);
     return {
       id: `vscode-profile-${digest}`,
-      ttsBackend: cfg.get<string>("avatar.ttsBackend", "qwen3"),
-      speaker: cfg.get<string>("avatar.speaker", "Ono_Anna"),
+      ttsBackend: cfg.get<string>("avatar.ttsBackend", "voxcpm"),
+      speaker: cfg.get<string>("avatar.speaker", ""),
       speed: cfg.get<number>("avatar.speed", 1.0),
       imagePath: customImage,
     };
@@ -764,7 +767,7 @@ function resolveAvatar(cfg: vscode.WorkspaceConfiguration): {
   }
   return {
     id: character || cfg.get<string>("avatar.id", "").trim(),
-    ttsBackend: cfg.get<string>("avatar.ttsBackend", "qwen3"),
+    ttsBackend: cfg.get<string>("avatar.ttsBackend", "voxcpm"),
     speaker: cfg.get<string>("avatar.speaker", ""),
     speed: cfg.get<number>("avatar.speed", 1.0),
   };
@@ -960,7 +963,7 @@ async function ensureAvatarRegistered(
 }
 
 // Speech-channel markers (see VOICE_DIRECTION_CONTRACT / SPEAK_CHANNEL_CONTRACT):
-//   {{VOICE: ...}} — vocal-acting direction → Qwen3 `instruct`.
+//   {{VOICE: ...}} — vocal-acting direction → VoxCPM2 `instruct`.
 //   {{SPEAK: ...}} — spoken override; when set, ONLY this is read aloud while
 //     the full answer stays in the transcript. Absent → the sanitized answer
 //     is spoken. This is the voice/text split the model controls.
@@ -1066,9 +1069,12 @@ async function speak(text: string, direction?: string): Promise<void> {
 
   // Numeric speaker ids (AivisSpeech / VoiceVox style) must go over the wire
   // as numbers — the ditto→TTS proxy forwards `speaker` verbatim and the
-  // engine expects an int for those backends.
+  // engine expects an int for those backends. VoxCPM2's voice is a
+  // natural-language Voice Design carried in the separate `design` field,
+  // so it never rides `speaker`.
+  const isVoxCpm = resolved.ttsBackend === "voxcpm";
   const speakerStr = String(resolved.speaker ?? "").trim();
-  const speaker: string | number | undefined = speakerStr
+  const speaker: string | number | undefined = !isVoxCpm && speakerStr
     ? /^\d+$/.test(speakerStr)
       ? Number(speakerStr)
       : speakerStr
@@ -1088,13 +1094,16 @@ async function speak(text: string, direction?: string): Promise<void> {
     tts_backend: resolved.ttsBackend,
     language,
     lang: dittoLanguage,
-    speaker,
+    // VoxCPM2's voice is a Voice Design (`design`); aivis/voicevox/irodori
+    // still take `speaker`.
+    ...(isVoxCpm ? { design: speakerStr || undefined } : { speaker }),
     speed: resolved.speed,
     fps: 25,
-    // Per-turn {{VOICE}} acting direction. The ditto→TTS proxy only forwards
-    // `instruct` for the qwen3 backend; aivis/irodori ignore it.
-    instruct: resolved.ttsBackend === "qwen3" ? direction : undefined,
-    split_mixed_languages: resolved.ttsBackend === "qwen3",
+    // Per-turn {{VOICE}} acting direction. The ditto→TTS proxy forwards
+    // `instruct` for voxcpm (and the retired qwen3 alias); aivis/irodori
+    // ignore it. `split_mixed_languages` was qwen3-only and is dropped —
+    // VoxCPM2 ignores it.
+    instruct: isVoxCpm || resolved.ttsBackend === "qwen3" ? direction : undefined,
   };
 
   try {
