@@ -55,6 +55,14 @@ export type EngineEvent =
   | ({ type: "inspect_image"; path: string; size_bytes: number; error?: string | null } & WithTurn)
   | ({ type: "final"; answer: string } & WithTurn)
   | ({ type: "malformed"; excerpt: string } & WithTurn)
+  | ({
+      type: "context_compacted";
+      before_tokens: number;
+      after_tokens: number;
+      stubbed: number;
+      summarised: number;
+      summary_failed: boolean;
+    } & WithTurn)
   | ({ type: "error"; message: string } & WithTurn)
   | ({ type: "done"; iterations: number; success: boolean } & WithTurn);
 

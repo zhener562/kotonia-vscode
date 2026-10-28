@@ -62,6 +62,18 @@ export function engineToRow(msg: EngineMessage): Row | null {
       return { cls: "final", html: `<div class="final-answer">${mdToHtml(msg.answer)}</div>` };
     case "malformed":
       return { cls: "malformed", html: `<span class="dim">malformed output — retrying</span>` };
+    case "context_compacted": {
+      // kotonia-cli v0.1.10+: older turns folded to stay inside the model's window.
+      const parts: string[] = [];
+      if (msg.stubbed > 0) parts.push(`${msg.stubbed} old outputs stubbed`);
+      if (msg.summarised > 0) parts.push(`${msg.summarised} older messages summarised`);
+      if (msg.summary_failed) parts.push("summary failed, outputs stubbed instead");
+      const detail = parts.length ? `, ${parts.join(", ")}` : "";
+      return {
+        cls: "thinking",
+        html: `<span class="dim">context compacted: ~${msg.before_tokens.toLocaleString()} → ~${msg.after_tokens.toLocaleString()} tokens${esc(detail)}</span>`,
+      };
+    }
     case "error":
       return { cls: "error", html: `<span class="badge err">error</span> ${esc(msg.message)}` };
     default:
