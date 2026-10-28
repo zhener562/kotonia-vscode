@@ -21,6 +21,13 @@ git remote add kotonia-vscode git@github.com:zhener562/kotonia-vscode.git
 Create or verify the Visual Studio Marketplace publisher id `shinjishimizu`, then add
 `VSCE_PAT` as a GitHub Actions secret in `zhener562/kotonia-vscode`.
 
+`VSCE_PAT` expires — Azure DevOps no longer issues non-expiring PATs. The current
+one was created 2026-10-29 and is valid for about 3 months (until ~2027-01-28).
+Renew it before then (Marketplace scope: Manage) and set it from a real terminal:
+`gh secret set VSCE_PAT --repo zhener562/kotonia-vscode` prompts for the value, so
+running it without a TTY (e.g. through an agent's `!` shell) stores an empty
+secret. An expired or empty PAT fails the `publish-marketplace` job.
+
 ## Sync from the monorepo
 
 From the repository that owns `vscode-extension/`:

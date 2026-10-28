@@ -94,16 +94,17 @@ jobs:
           pattern: kotonia-agent
           merge-multiple: true
 
-      # Non-fatal: the publisher is pending Marketplace review ("suspicious
-      # content" gate for first-time publishers). Keep the rest of the pipeline
-      # (and the downloadable release) green until it's unblocked.
+      # Fatal on purpose. This used to be continue-on-error (from when the
+      # publisher sat in Marketplace's first-time review), so an expired PAT
+      # (v0.0.33: "The Personal Access Token used has expired") and an empty
+      # secret both left the run green while the Marketplace stayed on the
+      # old version. Azure DevOps PATs now expire; see docs/RELEASE.md.
       - name: Publish Marketplace package
-        continue-on-error: true
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
           if [ -z "${VSCE_PAT:-}" ]; then
-            echo "VSCE_PAT is not configured; skipping Marketplace publish."
-            exit 0
+            echo "::error::VSCE_PAT is empty or not configured — Marketplace not published"
+            exit 1
           fi
           npx vsce publish --packagePath dist/published-vsix/*.vsix
